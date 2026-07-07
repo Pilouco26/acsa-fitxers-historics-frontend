@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { MoreNavMenu } from "@/components/MoreNavMenu";
 
 const mainNav = [
   { to: "/upload", label: "Escàner" },
@@ -53,9 +54,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="sidebar-nav">
           <NavSection title="Flux principal" items={mainNav} />
-          <NavSection title="Eines" items={secondaryNav} />
-          <NavSection title="Administració" items={adminNav} />
         </nav>
+        <div className="sidebar-footer">
+          <MoreNavMenu
+            sections={[
+              { title: "Eines", items: secondaryNav },
+              { title: "Administració", items: adminNav },
+            ]}
+          />
+        </div>
       </aside>
       <div className="main-area">
         <main className="main-content">{children}</main>

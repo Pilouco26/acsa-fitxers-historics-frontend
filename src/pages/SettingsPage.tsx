@@ -10,6 +10,7 @@ export function SettingsPage() {
   const [inputFolder, setInputFolder] = useState("");
   const [outputFolder, setOutputFolder] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
+  const [geminiKeyBackup, setGeminiKeyBackup] = useState("");
   const [geminiModel, setGeminiModel] = useState("");
 
   const { data, isLoading } = useQuery({
@@ -30,11 +31,13 @@ export function SettingsPage() {
         input_folder: inputFolder,
         output_folder: outputFolder,
         gemini_api_key: geminiKey || undefined,
+        gemini_api_key_backup: geminiKeyBackup || undefined,
         gemini_model: geminiModel || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setGeminiKey("");
+      setGeminiKeyBackup("");
       setSuccess(true);
       setError(null);
       window.setTimeout(() => setSuccess(false), 3000);
@@ -53,7 +56,7 @@ export function SettingsPage() {
     <>
       <PageHeader
         title="Configuració"
-        description="Carpetes d'entrada i sortida, clau API de Gemini i model d'IA."
+        description="Carpetes d'entrada i sortida, claus API de Gemini (principal i de reserva) i model d'IA."
       />
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -95,6 +98,24 @@ export function SettingsPage() {
             placeholder="Deixeu en blanc per no canviar"
             value={geminiKey}
             onChange={(e) => setGeminiKey(e.target.value)}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="gemini-key-backup">
+            Clau API Gemini de reserva{" "}
+            {data?.gemini_configured && data.gemini_api_key_backup && (
+              <span style={{ color: "var(--color-success)" }}>
+                (configurada: {data.gemini_api_key_backup})
+              </span>
+            )}
+          </label>
+          <input
+            id="gemini-key-backup"
+            type="password"
+            placeholder="Deixeu en blanc per no canviar"
+            value={geminiKeyBackup}
+            onChange={(e) => setGeminiKeyBackup(e.target.value)}
           />
         </div>
 

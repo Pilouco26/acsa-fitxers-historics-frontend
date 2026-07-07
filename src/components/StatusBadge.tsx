@@ -5,6 +5,8 @@ export function StatusBadge({ status }: { status: string | null }) {
       ? "badge-ok"
       : s === "revisio"
         ? "badge-revisio"
+        : s === "repeated"
+          ? "badge-repeated"
         : s === "error"
           ? "badge-error"
           : "badge-pending";
@@ -12,6 +14,7 @@ export function StatusBadge({ status }: { status: string | null }) {
   const labels: Record<string, string> = {
     ok: "Aprovat",
     revisio: "Revisió",
+    repeated: "Repetit",
     error: "Error",
     pending: "Pendent",
   };

@@ -25,6 +25,8 @@ export interface DocumentOut {
   sender: string | null;
   recipient: string | null;
   processed_at: string | null;
+  duplicate?: boolean;
+  compare?: CompareResponse;
 }
 
 export interface DocumentListResponse {
@@ -51,6 +53,8 @@ export interface DocumentFilters {
 export interface UploadOut {
   filename: string;
   relative_path: string;
+  duplicate?: boolean;
+  compare?: CompareResponse;
 }
 
 export interface BatchUploadOut {
@@ -114,6 +118,7 @@ export interface SettingsOut {
   input_folder: string;
   output_folder: string;
   gemini_api_key: string;
+  gemini_api_key_backup: string;
   gemini_model: string;
   gemini_configured: boolean;
 }
@@ -122,6 +127,7 @@ export interface SettingsUpdate {
   input_folder?: string | null;
   output_folder?: string | null;
   gemini_api_key?: string | null;
+  gemini_api_key_backup?: string | null;
   gemini_model?: string | null;
 }
 
@@ -129,4 +135,105 @@ export interface HealthOut {
   status: string;
   ocr: string;
   gemini_configured: boolean;
+}
+
+export interface CompareMatchOut {
+  relative_path: string | null;
+  document_id: number | null;
+  trust: number | null;
+  breakdown: Record<string, unknown> | null;
+}
+
+export interface CompareResponse {
+  verdict: string;
+  candidates_scanned: number;
+  bytes_compared: number;
+  text_compared: number;
+  trust: number | null;
+  breakdown: Record<string, unknown> | null;
+  best_match: CompareMatchOut | null;
+  alternatives: CompareMatchOut[];
+}
+
+export interface ApplyRequest {
+  dry_run?: boolean;
+  folder?: string | null;
+}
+
+export interface ApplyResponse {
+  summary: Record<string, number>;
+}
+
+export interface RevertResponse {
+  summary: Record<string, number>;
+}
+
+export interface EmailOut {
+  id: number;
+  status: string | null;
+  proposed_name: string | null;
+  original_name: string | null;
+  company: string | null;
+  doc_type: string | null;
+  doc_type_ca: string | null;
+  final_date: string | null;
+  overall_conf: string | null;
+  summary: string | null;
+  error: string | null;
+  subject: string | null;
+  sender_email: string | null;
+  sender_name: string | null;
+  sent_at: string | null;
+  processed_at: string | null;
+}
+
+export interface EmailUpdate {
+  proposed_name?: string | null;
+  summary?: string | null;
+  status?: string | null;
+  target_folder?: string | null;
+  approve?: boolean;
+}
+
+export interface EmailListResponse {
+  items: EmailOut[];
+  total: number;
+}
+
+export interface EmailFilters {
+  status?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface EmailAssignRequest {
+  source?: string;
+  dest?: string;
+  limit?: number | null;
+  dry_run?: boolean;
+  quarantine?: string;
+  sync_db?: boolean;
+}
+
+export interface EmailAssignResponse {
+  summary: Record<string, number>;
+}
+
+export interface EmailAnalyzeRequest {
+  source?: string;
+  limit?: number | null;
+  force?: boolean;
+  dry_run?: boolean;
+}
+
+export interface FolderItem {
+  index: number;
+  name: string;
+  relative_path: string;
+}
+
+export interface FolderListResponse {
+  items: FolderItem[];
+  total: number;
 }

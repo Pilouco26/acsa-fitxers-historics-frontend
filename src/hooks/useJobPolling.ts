@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { getJob, type JobOut } from "@/api/client";
+import { getJob } from "@/api/client";
+import type { JobOut } from "@/api/types";
 
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 

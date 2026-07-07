@@ -1,8 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 import { Layout } from "@/components/Layout";
+import { AnalisiPage } from "@/pages/AnalisiPage";
 import { ClassificadorPage } from "@/pages/ClassificadorPage";
+import { ComparadorPage } from "@/pages/ComparadorPage";
+import { CorreusPage } from "@/pages/CorreusPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { EdicionsPage } from "@/pages/EdicionsPage";
 import { RevisioPage } from "@/pages/RevisioPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UploadPage } from "@/pages/UploadPage";
@@ -10,6 +14,7 @@ import { UploadPage } from "@/pages/UploadPage";
 export default function App() {
   return (
     <BrowserRouter>
+      <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
       <Layout>
         <Routes>
           <Route path="/" element={<Navigate to="/upload" replace />} />
@@ -18,46 +23,10 @@ export default function App() {
           <Route path="/revisio" element={<RevisioPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route
-            path="/comparador"
-            element={
-              <PlaceholderPage
-                title="Comparador"
-                description="Cerca de duplicats per SSIM i empremtes digitals."
-                endpoint="POST /api/compare"
-              />
-            }
-          />
-          <Route
-            path="/admin/analisi"
-            element={
-              <PlaceholderPage
-                title="Anàlisi"
-                description="Anàlisi per lots amb filtres de carpeta."
-                endpoint="POST /api/jobs/analyze"
-              />
-            }
-          />
-          <Route
-            path="/admin/edicions"
-            element={
-              <PlaceholderPage
-                title="Edicions"
-                description="Aplicar i revertir canvis de nom aprovats."
-                endpoint="POST /api/apply, POST /api/revert"
-              />
-            }
-          />
-          <Route
-            path="/correus"
-            element={
-              <PlaceholderPage
-                title="Correus"
-                description="Anàlisi i assignació de correus .eml."
-                endpoint="POST /api/jobs/email-analyze, POST /api/emails/assign"
-              />
-            }
-          />
+          <Route path="/comparador" element={<ComparadorPage />} />
+          <Route path="/admin/analisi" element={<AnalisiPage />} />
+          <Route path="/admin/edicions" element={<EdicionsPage />} />
+          <Route path="/correus" element={<CorreusPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>

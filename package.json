@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.60.0",
+    "pdfjs-dist": "^6.1.200",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "react-hot-toast": "^2.5.2",
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
