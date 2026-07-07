@@ -27,8 +27,8 @@ export function TablePagination({
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={safePage <= 0}
-          onClick={() => onPageChange(safePage - 1)}
+          disabled={page <= 0}
+          onClick={() => onPageChange(page - 1)}
         >
           Anterior
         </button>
@@ -38,8 +38,8 @@ export function TablePagination({
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={safePage >= totalPages - 1}
-          onClick={() => onPageChange(safePage + 1)}
+          disabled={page >= totalPages - 1}
+          onClick={() => onPageChange(page + 1)}
         >
           Següent
         </button>

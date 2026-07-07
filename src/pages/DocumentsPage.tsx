@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listDocuments, updateDocument } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
 import { PdfPreview } from "@/components/PdfPreview";
@@ -91,10 +91,6 @@ export function DocumentsPage() {
     };
   }, [detailVisible]);
 
-  useEffect(() => {
-    setPage(0);
-  }, [pageSize]);
-
   const { data, isLoading, refetch } = useQuery({
     queryKey: [
       "documents",
@@ -118,6 +114,7 @@ export function DocumentsPage() {
         limit: pageSize,
         offset: page * pageSize,
       }),
+    placeholderData: keepPreviousData,
   });
 
   const updateNameMutation = useMutation({
@@ -134,6 +131,7 @@ export function DocumentsPage() {
   const total = data?.total ?? 0;
 
   useEffect(() => {
+    if (total <= 0) return;
     const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
     if (page > maxPage) setPage(maxPage);
   }, [total, page, pageSize]);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, deleteDocument, listDocuments, updateDocument } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
 import { PdfPreview, releaseDocumentPreview } from "@/components/PdfPreview";
@@ -69,10 +69,6 @@ export function RevisioPage() {
     };
   }, [detailVisible]);
 
-  useEffect(() => {
-    setPage(0);
-  }, [pageSize]);
-
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["documents", "revisio", debouncedSearch, page, pageSize],
     queryFn: () =>
@@ -82,12 +78,14 @@ export function RevisioPage() {
         limit: pageSize,
         offset: page * pageSize,
       }),
+    placeholderData: keepPreviousData,
   });
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
 
   useEffect(() => {
+    if (total <= 0) return;
     const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
     if (page > maxPage) setPage(maxPage);
   }, [total, page, pageSize]);
