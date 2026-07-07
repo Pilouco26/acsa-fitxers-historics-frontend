@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, deleteDocument, listDocuments, updateDocument } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
-import { PdfPreview } from "@/components/PdfPreview";
+import { PdfPreview, releaseDocumentPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import type { DocumentOut } from "@/api/types";
 
 const MIN_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 25;
-
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
-}
 
 export function RevisioPage() {
   const queryClient = useQueryClient();
@@ -141,6 +138,20 @@ export function RevisioPage() {
     setPreviewRotation((deg) => (deg + 90) % 360);
   }
 
+  async function forceCloseDocumentPreview(documentId: number): Promise<void> {
+    // Abort fetch, blank iframe, and revoke blob URL before React unmounts.
+    await releaseDocumentPreview(documentId);
+
+    flushSync(() => {
+      setDetailOpen(false);
+      setSelected(null);
+      setPreviewRotation(0);
+    });
+
+    // Catch any preview still registered after unmount (useLayoutEffect cleanup).
+    await releaseDocumentPreview(documentId);
+  }
+
   async function handleDelete(doc: DocumentOut) {
     if (
       !window.confirm(
@@ -150,18 +161,16 @@ export function RevisioPage() {
       return;
     }
 
-    // Important: unmount preview before deleting to avoid backend conflicts
-    // when the file is still being streamed / opened.
-    if (selected?.id === doc.id) {
-      setDetailOpen(false);
-      setSelected(null);
-      setPreviewRotation(0);
-      // Give React time to unmount PdfPreview and revoke its object URL.
-      await nextFrame();
-      await nextFrame();
-    }
+    setError(null);
 
-    deleteMutation.mutate(doc.id);
+    try {
+      await forceCloseDocumentPreview(doc.id);
+      await deleteMutation.mutateAsync(doc.id);
+    } catch (err) {
+      if (!(err instanceof ApiError)) {
+        setError("Error en eliminar");
+      }
+    }
   }
 
   const showDetailToggle = items.length > 0;
@@ -180,7 +189,15 @@ export function RevisioPage() {
     <div className="page-fill">
       <PageHeader
         title="Revisió"
-        description="Revisió de documents classificats. Cliqueu un fitxer per previsualitzar el PDF, ajustar el nom/resum i aprovar-lo."
+        description={
+          <>
+            Revisió de documents classificats. Cliqueu un fitxer per previsualitzar el PDF, ajustar el
+            nom/resum i aprovar-lo.{" "}
+            <span className="revisio-repeated-legend">
+              Les files en vermell poden esser documents repetits
+            </span>
+          </>
+        }
       />
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -220,7 +237,12 @@ export function RevisioPage() {
                     {items.map((doc) => (
                       <tr
                         key={doc.id}
-                        className={selected?.id === doc.id ? "selected" : ""}
+                        className={[
+                          selected?.id === doc.id && "selected",
+                          doc.status === "repeated" && "data-table-row--repeated",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                         onClick={() => selectDoc(doc)}
                         style={{ cursor: "pointer" }}
                       >

@@ -496,6 +496,22 @@ select {
   background: rgba(0, 113, 227, 0.06);
 }
 
+.data-table tbody tr.data-table-row--repeated {
+  color: var(--color-danger);
+}
+
+.data-table tbody tr.data-table-row--repeated:hover {
+  background: rgba(255, 59, 48, 0.06);
+}
+
+.data-table tbody tr.data-table-row--repeated.selected {
+  background: rgba(255, 59, 48, 0.08);
+}
+
+.revisio-repeated-legend {
+  color: var(--color-danger);
+}
+
 .data-table tbody tr.data-table-row--empty:hover {
   background: transparent;
 }
@@ -503,6 +519,41 @@ select {
 .data-table tbody tr.data-table-row--empty td {
   color: transparent;
   user-select: none;
+}
+
+.data-table th .table-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.data-table th .table-sort-btn:hover {
+  color: var(--color-text);
+}
+
+.table-filters-advanced {
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.table-filters-advanced > summary {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.table-filters-advanced[open] > summary {
+  margin-bottom: 0.25rem;
 }
 
 .table-pagination {

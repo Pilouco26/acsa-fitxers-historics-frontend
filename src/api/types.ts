@@ -42,10 +42,17 @@ export interface DocumentUpdate {
   approve?: boolean;
 }
 
+export type DocumentOrderBy = "proposed_name" | "company_folder";
+export type DocumentOrderDir = "asc" | "desc";
+
 export interface DocumentFilters {
   status?: string;
   folder?: string;
   q?: string;
+  proposed_name?: string;
+  company_folder?: string;
+  order_by?: DocumentOrderBy;
+  order?: DocumentOrderDir;
   limit?: number;
   offset?: number;
 }

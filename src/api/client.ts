@@ -193,6 +193,10 @@ export function listDocuments(
   if (params.status) qs.set("status", params.status);
   if (params.folder) qs.set("folder", params.folder);
   if (params.q) qs.set("q", params.q);
+  if (params.proposed_name) qs.set("proposed_name", params.proposed_name);
+  if (params.company_folder) qs.set("company_folder", params.company_folder);
+  if (params.order_by) qs.set("order_by", params.order_by);
+  if (params.order) qs.set("order", params.order);
   if (params.limit != null) qs.set("limit", String(params.limit));
   if (params.offset != null) qs.set("offset", String(params.offset));
   const query = qs.toString();

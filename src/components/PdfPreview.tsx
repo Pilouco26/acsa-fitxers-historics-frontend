@@ -1,7 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { documentFileUrl } from "@/api/client";
 
 const API_KEY = import.meta.env.VITE_API_KEY?.trim() || "";
+
+const activeReleases = new Map<number, () => void>();
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+/** Force-close any in-flight preview fetch / iframe for a document. */
+export async function releaseDocumentPreview(documentId: number): Promise<void> {
+  const release = activeReleases.get(documentId);
+  if (release) {
+    release();
+    activeReleases.delete(documentId);
+  }
+  await nextFrame();
+  await nextFrame();
+}
 
 export function PdfPreview({
   documentId,
@@ -12,6 +29,7 @@ export function PdfPreview({
   title: string;
   rotation?: number;
 }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -27,10 +45,23 @@ export function PdfPreview({
     return normalized;
   }, [rotation]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true;
     const ac = new AbortController();
     let urlToRevoke: string | null = null;
+
+    const release = () => {
+      active = false;
+      ac.abort();
+      const iframe = iframeRef.current;
+      if (iframe) iframe.src = "about:blank";
+      if (urlToRevoke) {
+        URL.revokeObjectURL(urlToRevoke);
+        urlToRevoke = null;
+      }
+    };
+
+    activeReleases.set(documentId, release);
 
     setLoading(true);
     setError(null);
@@ -60,9 +91,8 @@ export function PdfPreview({
       });
 
     return () => {
-      active = false;
-      ac.abort();
-      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
+      activeReleases.delete(documentId);
+      release();
     };
   }, [documentId]);
 
@@ -84,6 +114,7 @@ export function PdfPreview({
             }}
           >
             <iframe
+              ref={iframeRef}
               title={title}
               src={iframeSrc}
               style={{ width: "100%", height: "100%", border: 0, display: "block" }}
