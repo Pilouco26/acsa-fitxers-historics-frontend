@@ -50,7 +50,11 @@ export interface DocumentFilters {
   folder?: string;
   q?: string;
   proposed_name?: string;
+  original_name?: string;
   company_folder?: string;
+  doc_type_ca?: string;
+  final_date?: string;
+  language?: string;
   order_by?: DocumentOrderBy;
   order?: DocumentOrderDir;
   limit?: number;

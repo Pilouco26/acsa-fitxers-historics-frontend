@@ -1,18 +1,31 @@
-import { listDocuments } from "@/api/client";
 import type { DocumentFilters } from "@/api/types";
-
-const COUNT_BATCH_SIZE = 10_000;
+import { fetchAllDocuments } from "@/utils/fetchAllDocuments";
+import { matchesDocumentFilters } from "@/utils/matchDocumentFilters";
 
 export type DocumentListFilterParams = Pick<
   DocumentFilters,
-  "q" | "proposed_name" | "company_folder" | "folder"
+  | "q"
+  | "proposed_name"
+  | "original_name"
+  | "company_folder"
+  | "folder"
+  | "doc_type_ca"
+  | "final_date"
+  | "language"
 >;
 
 export function hasDocumentListFilters(
   filters: DocumentListFilterParams,
 ): boolean {
   return Boolean(
-    filters.q || filters.proposed_name || filters.company_folder || filters.folder,
+    filters.q ||
+      filters.proposed_name ||
+      filters.original_name ||
+      filters.company_folder ||
+      filters.folder ||
+      filters.doc_type_ca ||
+      filters.final_date ||
+      filters.language,
   );
 }
 
@@ -30,22 +43,6 @@ export function estimateFilteredTotal(
 export async function fetchFilteredDocumentCount(
   filters: DocumentListFilterParams & Pick<DocumentFilters, "status">,
 ): Promise<number> {
-  let offset = 0;
-  let count = 0;
-
-  for (;;) {
-    const res = await listDocuments({
-      status: filters.status,
-      q: filters.q,
-      proposed_name: filters.proposed_name,
-      company_folder: filters.company_folder,
-      folder: filters.folder,
-      limit: COUNT_BATCH_SIZE,
-      offset,
-    });
-
-    count += res.items.length;
-    if (res.items.length < COUNT_BATCH_SIZE) return count;
-    offset += COUNT_BATCH_SIZE;
-  }
+  const all = await fetchAllDocuments(filters.status ?? "");
+  return all.filter((doc) => matchesDocumentFilters(doc, filters)).length;
 }

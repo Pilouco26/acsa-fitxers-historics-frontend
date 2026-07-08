@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteDocument, listDocuments, updateDocument } from "@/api/client";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
+import { FilterAutocompleteInput } from "@/components/FilterAutocompleteInput";
 import { PageHeader } from "@/components/PageHeader";
 import { PdfPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
@@ -12,9 +13,14 @@ import {
   LIST_PANEL_FIXED_HEIGHT_PX,
   LIST_PANEL_ROW_HEIGHT_PX,
 } from "@/constants/globals";
+import { DOCUMENT_LANGUAGE_OPTIONS } from "@/constants/documentFilters";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { useDocumentListTotal } from "@/hooks/useDocumentListTotal";
+import { useDocumentFilterOptions } from "@/hooks/useDocumentFilterOptions";
 import type { DocumentOrderBy, DocumentOut } from "@/api/types";
+import { fetchAllDocuments } from "@/utils/fetchAllDocuments";
+import { hasDocumentListFilters } from "@/utils/documentListTotal";
+import { matchesDocumentFilters } from "@/utils/matchDocumentFilters";
+import { sortDocuments } from "@/utils/sortDocuments";
 
 function sortIndicator(active: boolean, dir: "asc" | "desc") {
   if (!active) return "↕";
@@ -25,13 +31,18 @@ export function DocumentsPage() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  const [filterNom, setFilterNom] = useState("");
-  const [filterCarpeta, setFilterCarpeta] = useState("");
   const [filterFolder, setFilterFolder] = useState("");
+  const [filterProposedName, setFilterProposedName] = useState("");
+  const [filterOriginalName, setFilterOriginalName] = useState("");
+  const [filterDocTypeCa, setFilterDocTypeCa] = useState("");
+  const [filterFinalDate, setFilterFinalDate] = useState("");
+  const [filterLanguage, setFilterLanguage] = useState("");
   const debouncedSearch = useDebouncedValue(search);
-  const debouncedFilterNom = useDebouncedValue(filterNom);
-  const debouncedFilterCarpeta = useDebouncedValue(filterCarpeta);
   const debouncedFilterFolder = useDebouncedValue(filterFolder);
+  const debouncedFilterProposedName = useDebouncedValue(filterProposedName);
+  const debouncedFilterOriginalName = useDebouncedValue(filterOriginalName);
+  const debouncedFilterFinalDate = useDebouncedValue(filterFinalDate);
+  const { data: filterOptions } = useDocumentFilterOptions(DOCUMENT_STATUS_OK);
   const [orderBy, setOrderBy] = useState<DocumentOrderBy | null>(null);
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
@@ -46,9 +57,12 @@ export function DocumentsPage() {
     setPage(0);
   }, [
     debouncedSearch,
-    debouncedFilterNom,
-    debouncedFilterCarpeta,
     debouncedFilterFolder,
+    debouncedFilterProposedName,
+    debouncedFilterOriginalName,
+    filterDocTypeCa,
+    debouncedFilterFinalDate,
+    filterLanguage,
     orderBy,
     orderDir,
   ]);
@@ -87,48 +101,93 @@ export function DocumentsPage() {
     };
   }, [detailVisible]);
 
-  const listQueryKey = [
-    "documents",
-    DOCUMENT_STATUS_OK,
-    debouncedSearch,
-    debouncedFilterNom,
-    debouncedFilterCarpeta,
-    debouncedFilterFolder,
-    orderBy,
-    orderDir,
-    page,
-    pageSize,
-  ] as const;
+  const activeFilters = useMemo(
+    () => ({
+      q: debouncedSearch || undefined,
+      folder: debouncedFilterFolder || undefined,
+      proposed_name: debouncedFilterProposedName || undefined,
+      original_name: debouncedFilterOriginalName || undefined,
+      doc_type_ca: filterDocTypeCa || undefined,
+      final_date: debouncedFilterFinalDate || undefined,
+      language: filterLanguage || undefined,
+    }),
+    [
+      debouncedSearch,
+      debouncedFilterFolder,
+      debouncedFilterProposedName,
+      debouncedFilterOriginalName,
+      filterDocTypeCa,
+      debouncedFilterFinalDate,
+      filterLanguage,
+    ],
+  );
+  const hasActiveFilters = hasDocumentListFilters(activeFilters);
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: listQueryKey,
+  const allDocumentsQuery = useQuery({
+    queryKey: ["documents", DOCUMENT_STATUS_OK, "all"],
+    queryFn: () => fetchAllDocuments(DOCUMENT_STATUS_OK),
+    enabled: hasActiveFilters,
+    staleTime: 30_000,
+  });
+
+  const serverListQuery = useQuery({
+    queryKey: [
+      "documents",
+      DOCUMENT_STATUS_OK,
+      "server-page",
+      orderBy,
+      orderDir,
+      page,
+      pageSize,
+    ],
     queryFn: () =>
       listDocuments({
         status: DOCUMENT_STATUS_OK,
-        q: debouncedSearch || undefined,
-        proposed_name: debouncedFilterNom || undefined,
-        company_folder: debouncedFilterCarpeta || undefined,
-        folder: debouncedFilterFolder || undefined,
         order_by: orderBy ?? undefined,
         order: orderBy ? orderDir : undefined,
         limit: pageSize,
         offset: page * pageSize,
       }),
-    // Keep previous rows only when paginating; refetch cleanly when filters/sort change
-    // so total page count reflects the current result set.
+    enabled: !hasActiveFilters,
     placeholderData: (previousData, previousQuery) => {
       if (!previousData || !previousQuery) return previousData;
       const prev = previousQuery.queryKey;
-      const sameFilters =
-        prev[2] === debouncedSearch &&
-        prev[3] === debouncedFilterNom &&
-        prev[4] === debouncedFilterCarpeta &&
-        prev[5] === debouncedFilterFolder &&
-        prev[6] === orderBy &&
-        prev[7] === orderDir;
-      return sameFilters ? previousData : undefined;
+      const samePageContext = prev[3] === orderBy && prev[4] === orderDir;
+      return samePageContext ? previousData : undefined;
     },
   });
+
+  const filteredPage = useMemo(() => {
+    if (!hasActiveFilters || !allDocumentsQuery.data) return null;
+
+    const matched = allDocumentsQuery.data.filter((doc) =>
+      matchesDocumentFilters(doc, activeFilters),
+    );
+    const sorted = sortDocuments(matched, orderBy, orderDir);
+    const total = sorted.length;
+    const items = sorted.slice(page * pageSize, page * pageSize + pageSize);
+
+    return { items, total };
+  }, [
+    hasActiveFilters,
+    allDocumentsQuery.data,
+    activeFilters,
+    orderBy,
+    orderDir,
+    page,
+    pageSize,
+  ]);
+
+  const data = hasActiveFilters ? filteredPage : serverListQuery.data;
+  const isLoading = hasActiveFilters
+    ? allDocumentsQuery.isLoading
+    : serverListQuery.isLoading;
+  const isFetching = hasActiveFilters
+    ? allDocumentsQuery.isFetching
+    : serverListQuery.isFetching;
+  const refetch = hasActiveFilters
+    ? allDocumentsQuery.refetch
+    : serverListQuery.refetch;
 
   const updateNameMutation = useMutation({
     mutationFn: ({ id, proposed_name }: { id: number; proposed_name: string }) =>
@@ -150,17 +209,9 @@ export function DocumentsPage() {
   });
 
   const items = data?.items ?? [];
-  const { total, totalPending, totalReady } = useDocumentListTotal({
-    status: DOCUMENT_STATUS_OK,
-    q: debouncedSearch || undefined,
-    proposed_name: debouncedFilterNom || undefined,
-    company_folder: debouncedFilterCarpeta || undefined,
-    folder: debouncedFilterFolder || undefined,
-    page,
-    pageSize,
-    apiTotal: data?.total ?? 0,
-    itemsLength: items.length,
-  });
+  const total = data?.total ?? 0;
+  const totalReady = !isFetching;
+  const totalPending = isFetching && items.length > 0;
 
   useEffect(() => {
     if (total <= 0) return;
@@ -219,12 +270,23 @@ export function DocumentsPage() {
 
   function clearFilters() {
     setSearch("");
-    setFilterNom("");
-    setFilterCarpeta("");
     setFilterFolder("");
+    setFilterProposedName("");
+    setFilterOriginalName("");
+    setFilterDocTypeCa("");
+    setFilterFinalDate("");
+    setFilterLanguage("");
   }
 
-  const hasActiveFilters = Boolean(search || filterNom || filterCarpeta || filterFolder);
+  const hasFilterUiActive = Boolean(
+    search ||
+      filterFolder ||
+      filterProposedName ||
+      filterOriginalName ||
+      filterDocTypeCa ||
+      filterFinalDate ||
+      filterLanguage,
+  );
 
   return (
     <div className="page-fill">
@@ -251,38 +313,72 @@ export function DocumentsPage() {
             <details className="table-filters-advanced">
               <summary>Filtres</summary>
               <div className="field-grid" style={{ marginTop: "0.75rem" }}>
+                <FilterAutocompleteInput
+                  id="filter-folder"
+                  label="Carpeta"
+                  placeholder="Carpeta d'arxiu"
+                  value={filterFolder}
+                  suggestions={filterOptions?.folders ?? []}
+                  onChange={setFilterFolder}
+                />
+                <FilterAutocompleteInput
+                  id="filter-proposed-name"
+                  label="Nom proposat"
+                  placeholder="Nom proposat"
+                  value={filterProposedName}
+                  suggestions={filterOptions?.proposedNames ?? []}
+                  onChange={setFilterProposedName}
+                />
+                <FilterAutocompleteInput
+                  id="filter-original-name"
+                  label="Nom original"
+                  placeholder="Nom original"
+                  value={filterOriginalName}
+                  suggestions={filterOptions?.originalNames ?? []}
+                  onChange={setFilterOriginalName}
+                />
                 <div className="field">
-                  <label htmlFor="filter-nom">Filtrar per nom</label>
+                  <label htmlFor="filter-doc-type-ca">Tipus (CA)</label>
+                  <select
+                    id="filter-doc-type-ca"
+                    value={filterDocTypeCa}
+                    onChange={(e) => setFilterDocTypeCa(e.target.value)}
+                  >
+                    <option value="">Tots</option>
+                    {filterOptions?.docTypeCa.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="filter-final-date">Data final</label>
                   <input
-                    id="filter-nom"
+                    id="filter-final-date"
                     type="search"
-                    placeholder="Nom del document"
-                    value={filterNom}
-                    onChange={(e) => setFilterNom(e.target.value)}
+                    placeholder="AAAA.MM.DD"
+                    value={filterFinalDate}
+                    onChange={(e) => setFilterFinalDate(e.target.value)}
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="filter-carpeta">Filtrar per carpeta d&apos;empresa</label>
-                  <input
-                    id="filter-carpeta"
-                    type="search"
-                    placeholder="Carpeta d'empresa"
-                    value={filterCarpeta}
-                    onChange={(e) => setFilterCarpeta(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="filter-folder">Filtrar per carpeta d&apos;arxiu</label>
-                  <input
-                    id="filter-folder"
-                    type="search"
-                    placeholder="archive / inbox"
-                    value={filterFolder}
-                    onChange={(e) => setFilterFolder(e.target.value)}
-                  />
+                  <label htmlFor="filter-language">Idioma</label>
+                  <select
+                    id="filter-language"
+                    value={filterLanguage}
+                    onChange={(e) => setFilterLanguage(e.target.value)}
+                  >
+                    <option value="">Tots</option>
+                    {DOCUMENT_LANGUAGE_OPTIONS.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
-              {hasActiveFilters && (
+              {hasFilterUiActive && (
                 <div className="toolbar-row" style={{ marginTop: "0.75rem" }}>
                   <button
                     type="button"
@@ -298,7 +394,11 @@ export function DocumentsPage() {
             {isLoading || (isFetching && items.length === 0) ? (
               <p className="empty-state">Carregant…</p>
             ) : items.length === 0 ? (
-              <p className="empty-state">No hi ha documents aprovats.</p>
+              <p className="empty-state">
+                {hasActiveFilters
+                  ? "No s'han trobat documents amb aquests filtres."
+                  : "No hi ha documents aprovats."}
+              </p>
             ) : (
               <div className="table-responsive table-responsive--no-scroll">
                 <table className="data-table">

@@ -194,7 +194,11 @@ export function listDocuments(
   if (params.folder) qs.set("folder", params.folder);
   if (params.q) qs.set("q", params.q);
   if (params.proposed_name) qs.set("proposed_name", params.proposed_name);
+  if (params.original_name) qs.set("original_name", params.original_name);
   if (params.company_folder) qs.set("company_folder", params.company_folder);
+  if (params.doc_type_ca) qs.set("doc_type_ca", params.doc_type_ca);
+  if (params.final_date) qs.set("final_date", params.final_date);
+  if (params.language) qs.set("language", params.language);
   if (params.order_by) qs.set("order_by", params.order_by);
   if (params.order) qs.set("order", params.order);
   if (params.limit != null) qs.set("limit", String(params.limit));
