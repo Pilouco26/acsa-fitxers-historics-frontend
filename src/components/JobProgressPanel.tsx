@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef } from "react";
 import type { JobOut } from "@/api/types";
 
 interface JobProgressPanelProps {
@@ -5,7 +6,80 @@ interface JobProgressPanelProps {
   onCancel?: () => void;
 }
 
+const documentStatusCountLabels: Record<string, string> = {
+  ok: "Aprovats",
+  revisio: "En revisió",
+  repeated: "Repetits",
+  error: "Errors",
+  pending: "Pendents",
+};
+
+const jobMessageLabels: Record<string, string> = {
+  "Analyzing documents": "Analitzant documents",
+  "Processing documents": "Processant documents",
+  "Assigning documents": "Assignant documents",
+  "Classifying documents": "Classificant documents",
+};
+
+function translateDocumentStatus(status: string): string {
+  return documentStatusCountLabels[status] ?? status;
+}
+
+function translateJobMessage(message: string): string {
+  return jobMessageLabels[message] ?? message;
+}
+
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 60) return `~${Math.ceil(seconds)} s`;
+  const mins = Math.ceil(seconds / 60);
+  if (mins < 60) return `~${mins} min`;
+  const hours = Math.ceil(mins / 60);
+  return `~${hours} h`;
+}
+
 export function JobProgressPanel({ job, onCancel }: JobProgressPanelProps) {
+  // Client-side ETA fallback (used only when backend doesn't provide eta_seconds).
+  const startedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Reset when switching jobs.
+    startedAtRef.current = null;
+  }, [job?.id]);
+
+  useEffect(() => {
+    // Start the timer once we see the job active.
+    if (!job) return;
+    if (startedAtRef.current) return;
+    if (job.status === "pending" || job.status === "running") {
+      startedAtRef.current = Date.now();
+    }
+  }, [job?.id, job?.status]);
+
+  const etaSeconds = useMemo(() => {
+    if (!job) return null;
+    const backendEta = job.eta_seconds;
+    if (typeof backendEta === "number" && Number.isFinite(backendEta) && backendEta >= 0) {
+      return backendEta;
+    }
+
+    const { progress } = job;
+    if (progress.total <= 0) return null;
+    if (progress.processed <= 0) return null;
+    if (progress.processed >= progress.total) return 0;
+
+    const startedAt = startedAtRef.current;
+    if (!startedAt) return null;
+
+    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    if (elapsedSeconds < 5) return null; // avoid noisy early estimates
+
+    const rate = progress.processed / elapsedSeconds;
+    if (!Number.isFinite(rate) || rate <= 0) return null;
+
+    return Math.ceil((progress.total - progress.processed) / rate);
+  }, [job?.eta_seconds, job?.progress.processed, job?.progress.total]);
+
   if (!job) return null;
 
   const { progress, status, error } = job;
@@ -46,14 +120,23 @@ export function JobProgressPanel({ job, onCancel }: JobProgressPanelProps) {
           </div>
         </>
       )}
-      {progress.message && (
-        <div style={{ marginTop: "0.5rem" }}>{progress.message}</div>
+      {(status === "pending" || status === "running") &&
+        typeof etaSeconds === "number" &&
+        Number.isFinite(etaSeconds) && (
+          <div style={{ marginTop: "0.5rem", color: "var(--color-text-secondary)" }}>
+            Temps estimat restant: {formatDuration(etaSeconds)}
+          </div>
+        )}
+      {progress.message && status !== "completed" && (
+        <div style={{ marginTop: "0.5rem" }}>
+          {translateJobMessage(progress.message)}
+        </div>
       )}
       {Object.keys(progress.status_counts).length > 0 && (
         <div style={{ marginTop: "0.5rem", fontSize: "0.8125rem" }}>
           {Object.entries(progress.status_counts).map(([k, v]) => (
             <span key={k} style={{ marginRight: "1rem" }}>
-              {k}: {v}
+              {translateDocumentStatus(k)}: {v}
             </span>
           ))}
         </div>

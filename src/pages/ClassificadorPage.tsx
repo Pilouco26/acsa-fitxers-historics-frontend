@@ -1,40 +1,10 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { cancelJob, startAnalyzeJob, ApiError } from "@/api/client";
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { PageHeader } from "@/components/PageHeader";
-import { useJobPolling } from "@/hooks/useJobPolling";
-import type { JobOut } from "@/api/types";
+import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
 
 export function ClassificadorPage() {
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [job, setJob] = useState<JobOut | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useJobPolling(jobId, 2000, setJob);
-
-  const analyzeMutation = useMutation({
-    mutationFn: () =>
-      startAnalyzeJob({
-        source: "inbox",
-        require_review: true,
-        force: false,
-        dry_run: false,
-      }),
-    onSuccess: (data) => {
-      setJobId(data.job_id);
-      setJob(null);
-      setError(null);
-    },
-    onError: (err) => {
-      setError(err instanceof ApiError ? err.message : "Error en iniciar l'anàlisi");
-    },
-  });
-
-  const busy =
-    analyzeMutation.isPending ||
-    job?.status === "pending" ||
-    job?.status === "running";
+  const { job, jobId, error, busy, isStarting, isAssigning, startAnalyze, cancel } =
+    useClassificadorJob();
 
   return (
     <>
@@ -56,26 +26,32 @@ export function ClassificadorPage() {
             type="button"
             className="btn btn-primary"
             disabled={busy}
-            onClick={() => analyzeMutation.mutate()}
+            onClick={startAnalyze}
           >
             Processar documents
           </button>
         </div>
 
-        <JobProgressPanel
-          job={job}
-          onCancel={
-            jobId
-              ? () => {
-                  cancelJob(jobId).then(setJob).catch(() => {});
-                }
-              : undefined
-          }
-        />
+        {isStarting && !job ? (
+          <div className="job-status">
+            <strong>Estat:</strong> En execució
+          </div>
+        ) : (
+          <JobProgressPanel
+            job={job}
+            onCancel={jobId ? cancel : undefined}
+          />
+        )}
 
-        {job?.status === "completed" && (
+        {isAssigning && (
+          <div className="job-status" style={{ marginTop: "1rem" }}>
+            <strong>Estat:</strong> Assignant documents…
+          </div>
+        )}
+
+        {job?.status === "completed" && !isAssigning && (
           <div className="alert alert-success" style={{ marginTop: "1rem" }}>
-            Anàlisi completada. Reviseu els documents a la pestanya Revisió.
+            Anàlisi i assignació completades. Reviseu els documents a la pestanya Revisió.
           </div>
         )}
       </div>

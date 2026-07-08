@@ -662,6 +662,19 @@ select {
   font-size: 0.875rem;
 }
 
+.classificador-job-banner {
+  flex-shrink: 0;
+  padding: 0.75rem var(--content-padding);
+  padding-left: max(var(--content-padding), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--content-padding), env(safe-area-inset-right, 0px));
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.classificador-job-banner .job-status {
+  margin-top: 0;
+}
+
 /* Alerts */
 .alert {
   padding: 0.75rem 1rem;

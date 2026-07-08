@@ -1,5 +1,7 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
+import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { MoreNavMenu } from "@/components/MoreNavMenu";
+import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
 
 const mainNav = [
   { to: "/upload", label: "Escàner" },
@@ -45,6 +47,11 @@ function NavSection({
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const { job, jobId, isActive, isStarting, cancel } = useClassificadorJob();
+  const onClassificador = location.pathname === "/classificador";
+  const showGlobalJobProgress = !onClassificador && isActive;
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -65,6 +72,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       <div className="main-area">
+        {showGlobalJobProgress && (
+          <div className="classificador-job-banner">
+            {isStarting && !job ? (
+              <div className="job-status">
+                <strong>Estat:</strong> En execució
+              </div>
+            ) : (
+              <JobProgressPanel
+                job={job}
+                onCancel={jobId ? cancel : undefined}
+              />
+            )}
+          </div>
+        )}
         <main className="main-content">{children}</main>
       </div>
     </div>

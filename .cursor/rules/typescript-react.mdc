@@ -1,0 +1,54 @@
+---
+description: TypeScript React development guidelines for this project
+globs: src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# TypeScript (React)
+
+## Coding standards
+
+- Prefer functional components over class components.
+- Use TypeScript interfaces for props and state; do not add PropTypes when types are present.
+- Use `useState` and `useEffect` for state and side effects; keep `useEffect` dependency arrays accurate.
+- Extract reusable logic into custom hooks (e.g. debouncing, list totals).
+- Use `React.memo` only when profiling shows a measurable benefit.
+- Strict TypeScript is enabled — avoid `any` and unused locals/parameters.
+
+## Folder structure
+
+```
+src/
+  components/
+  constants/
+  contexts/
+  hooks/
+  pages/
+  utils/
+  api/
+  App.tsx
+```
+
+## Performance
+
+- Lazy-load route-level pages with `React.lazy` and `Suspense` when bundle size matters.
+- Debounce search/filter inputs that trigger API calls.
+- Use React Query `placeholderData` / `keepPreviousData` thoughtfully for pagination vs filter changes.
+
+## Error handling
+
+- Wrap async mutations in `try/catch` when the caller must set UI error state.
+- Surface API errors via `ApiError` messages where the page already has error UI.
+
+## Conventions
+
+- Use `.tsx` for files containing JSX.
+- Shared UI actions (e.g. delete document) belong in `src/components/`.
+- Shared magic numbers and status strings belong in `src/constants/globals.ts`.
+- Match existing naming: Catalan UI copy, `@/` path aliases, `btn` / `field` CSS classes.
+
+## Out of scope unless requested
+
+- Mandatory 80% test coverage or snapshot tests for every component.
+- `React.FC` as a required pattern.
+- Per-directory bilingual README files.

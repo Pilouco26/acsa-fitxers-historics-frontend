@@ -1,22 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, deleteDocument, listDocuments, updateDocument } from "@/api/client";
+import {
+  ApiError,
+  deleteDocument,
+  listDocuments,
+  updateDocument,
+} from "@/api/client";
+import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { PageHeader } from "@/components/PageHeader";
 import { PdfPreview, releaseDocumentPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
+import {
+  DOCUMENT_LIST_MAX_PAGE_SIZE,
+  DOCUMENT_LIST_MIN_PAGE_SIZE,
+  DOCUMENT_STATUS_OK,
+  DOCUMENT_STATUS_REVISIO,
+  LIST_PANEL_FIXED_HEIGHT_PX,
+  LIST_PANEL_ROW_HEIGHT_PX,
+} from "@/constants/globals";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import type { DocumentOut } from "@/api/types";
-
-const MIN_PAGE_SIZE = 8;
-const MAX_PAGE_SIZE = 25;
 
 export function RevisioPage() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(MIN_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(DOCUMENT_LIST_MIN_PAGE_SIZE);
 
   const [selected, setSelected] = useState<DocumentOut | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -26,11 +38,6 @@ export function RevisioPage() {
 
   const [error, setError] = useState<string | null>(null);
   const listCardRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSearch(search), 300);
-    return () => window.clearTimeout(t);
-  }, [search]);
 
   useEffect(() => {
     setPage(0);
@@ -48,12 +55,13 @@ export function RevisioPage() {
 
     const compute = () => {
       const height = el.getBoundingClientRect().height;
-      const fixed = 56 + 44 + 56 + 48;
-      const rowHeight = 36;
 
       const next = Math.max(
-        MIN_PAGE_SIZE,
-        Math.min(MAX_PAGE_SIZE, Math.floor((height - fixed) / rowHeight)),
+        DOCUMENT_LIST_MIN_PAGE_SIZE,
+        Math.min(
+          DOCUMENT_LIST_MAX_PAGE_SIZE,
+          Math.floor((height - LIST_PANEL_FIXED_HEIGHT_PX) / LIST_PANEL_ROW_HEIGHT_PX),
+        ),
       );
 
       setPageSize((prev) => (prev === next ? prev : next));
@@ -70,10 +78,10 @@ export function RevisioPage() {
   }, [detailVisible]);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["documents", "revisio", debouncedSearch, page, pageSize],
+    queryKey: ["documents", DOCUMENT_STATUS_REVISIO, debouncedSearch, page, pageSize],
     queryFn: () =>
       listDocuments({
-        status: "revisio",
+        status: DOCUMENT_STATUS_REVISIO,
         q: debouncedSearch || undefined,
         limit: pageSize,
         offset: page * pageSize,
@@ -95,7 +103,7 @@ export function RevisioPage() {
       updateDocument(selected!.id, {
         proposed_name: editName,
         summary: editSummary,
-        status: "ok",
+        status: DOCUMENT_STATUS_OK,
         approve: true,
       }),
     onSuccess: () => {
@@ -151,14 +159,6 @@ export function RevisioPage() {
   }
 
   async function handleDelete(doc: DocumentOut) {
-    if (
-      !window.confirm(
-        `Segur que voleu eliminar "${doc.proposed_name ?? doc.original_name ?? "aquest document"}"?`,
-      )
-    ) {
-      return;
-    }
-
     setError(null);
 
     try {
@@ -328,14 +328,12 @@ export function RevisioPage() {
                 >
                   Aprovar
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  disabled={deleteMutation.isPending}
-                  onClick={() => handleDelete(selected)}
-                >
-                  Eliminar
-                </button>
+                <DeleteDocumentButton
+                  document={selected}
+                  isPending={deleteMutation.isPending}
+                  disabled={approveMutation.isPending}
+                  onDelete={handleDelete}
+                />
               </div>
             </div>
 

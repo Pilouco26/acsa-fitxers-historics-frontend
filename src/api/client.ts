@@ -260,6 +260,17 @@ export function assignDocuments(body: AssignRequest): Promise<AssignResponse> {
   }, { success: "Assignat", errorPrefix: "Error en l'assignació" });
 }
 
+export function assignDocument(
+  id: number,
+  body: Pick<AssignRequest, "dest">,
+): Promise<AssignResponse> {
+  return request<AssignResponse>(`/assign?id=${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }, { success: "Assignat", errorPrefix: "Error en l'assignació" });
+}
+
 // --- Settings ---
 
 export function getSettings(): Promise<SettingsOut> {

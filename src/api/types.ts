@@ -98,6 +98,13 @@ export interface JobOut {
   id: string;
   type: string;
   status: JobStatus;
+  /**
+   * Optional timing fields for UI ETA/elapsed display.
+   * Backend may omit these; frontend must handle undefined.
+   */
+  started_at?: string | null;
+  elapsed_seconds?: number | null;
+  eta_seconds?: number | null;
   progress: JobProgress;
   error: string | null;
   result: Record<string, unknown> | null;
@@ -112,6 +119,8 @@ export interface AssignRequest {
   dest?: string;
   limit?: number | null;
   dry_run?: boolean;
+  require_review?: boolean;
+  run_assign?: boolean;
   quarantine?: string;
   sync_db?: boolean;
 }

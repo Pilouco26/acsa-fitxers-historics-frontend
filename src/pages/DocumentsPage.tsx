@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listDocuments, updateDocument } from "@/api/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { deleteDocument, listDocuments, updateDocument } from "@/api/client";
+import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { PageHeader } from "@/components/PageHeader";
 import { PdfPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
+import {
+  DOCUMENT_LIST_MAX_PAGE_SIZE,
+  DOCUMENT_LIST_MIN_PAGE_SIZE,
+  DOCUMENT_STATUS_OK,
+  LIST_PANEL_FIXED_HEIGHT_PX,
+  LIST_PANEL_ROW_HEIGHT_PX,
+} from "@/constants/globals";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useDocumentListTotal } from "@/hooks/useDocumentListTotal";
 import type { DocumentOrderBy, DocumentOut } from "@/api/types";
-
-const MIN_PAGE_SIZE = 8;
-const MAX_PAGE_SIZE = 25;
 
 function sortIndicator(active: boolean, dir: "asc" | "desc") {
   if (!active) return "↕";
@@ -18,15 +25,17 @@ export function DocumentsPage() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterNom, setFilterNom] = useState("");
   const [filterCarpeta, setFilterCarpeta] = useState("");
-  const [debouncedFilterNom, setDebouncedFilterNom] = useState("");
-  const [debouncedFilterCarpeta, setDebouncedFilterCarpeta] = useState("");
+  const [filterFolder, setFilterFolder] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
+  const debouncedFilterNom = useDebouncedValue(filterNom);
+  const debouncedFilterCarpeta = useDebouncedValue(filterCarpeta);
+  const debouncedFilterFolder = useDebouncedValue(filterFolder);
   const [orderBy, setOrderBy] = useState<DocumentOrderBy | null>(null);
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(MIN_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(DOCUMENT_LIST_MIN_PAGE_SIZE);
   const [selected, setSelected] = useState<DocumentOut | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewRotation, setPreviewRotation] = useState(0);
@@ -34,23 +43,15 @@ export function DocumentsPage() {
   const listCardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSearch(search), 300);
-    return () => window.clearTimeout(t);
-  }, [search]);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedFilterNom(filterNom), 300);
-    return () => window.clearTimeout(t);
-  }, [filterNom]);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedFilterCarpeta(filterCarpeta), 300);
-    return () => window.clearTimeout(t);
-  }, [filterCarpeta]);
-
-  useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, debouncedFilterNom, debouncedFilterCarpeta, orderBy, orderDir]);
+  }, [
+    debouncedSearch,
+    debouncedFilterNom,
+    debouncedFilterCarpeta,
+    debouncedFilterFolder,
+    orderBy,
+    orderDir,
+  ]);
 
   const detailVisible = Boolean(selected && detailOpen);
 
@@ -65,17 +66,12 @@ export function DocumentsPage() {
     const compute = () => {
       const height = el.getBoundingClientRect().height;
 
-      // Rough constants (px) tuned for this UI:
-      // - toolbar row + spacing
-      // - table header row
-      // - pagination block + spacing
-      // - card paddings
-      const fixed = 56 + 44 + 56 + 48;
-      const rowHeight = 36;
-
       const next = Math.max(
-        MIN_PAGE_SIZE,
-        Math.min(MAX_PAGE_SIZE, Math.floor((height - fixed) / rowHeight)),
+        DOCUMENT_LIST_MIN_PAGE_SIZE,
+        Math.min(
+          DOCUMENT_LIST_MAX_PAGE_SIZE,
+          Math.floor((height - LIST_PANEL_FIXED_HEIGHT_PX) / LIST_PANEL_ROW_HEIGHT_PX),
+        ),
       );
 
       setPageSize((prev) => (prev === next ? prev : next));
@@ -91,30 +87,47 @@ export function DocumentsPage() {
     };
   }, [detailVisible]);
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: [
-      "documents",
-      "ok",
-      debouncedSearch,
-      debouncedFilterNom,
-      debouncedFilterCarpeta,
-      orderBy,
-      orderDir,
-      page,
-      pageSize,
-    ],
+  const listQueryKey = [
+    "documents",
+    DOCUMENT_STATUS_OK,
+    debouncedSearch,
+    debouncedFilterNom,
+    debouncedFilterCarpeta,
+    debouncedFilterFolder,
+    orderBy,
+    orderDir,
+    page,
+    pageSize,
+  ] as const;
+
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: listQueryKey,
     queryFn: () =>
       listDocuments({
-        status: "ok",
+        status: DOCUMENT_STATUS_OK,
         q: debouncedSearch || undefined,
         proposed_name: debouncedFilterNom || undefined,
         company_folder: debouncedFilterCarpeta || undefined,
+        folder: debouncedFilterFolder || undefined,
         order_by: orderBy ?? undefined,
         order: orderBy ? orderDir : undefined,
         limit: pageSize,
         offset: page * pageSize,
       }),
-    placeholderData: keepPreviousData,
+    // Keep previous rows only when paginating; refetch cleanly when filters/sort change
+    // so total page count reflects the current result set.
+    placeholderData: (previousData, previousQuery) => {
+      if (!previousData || !previousQuery) return previousData;
+      const prev = previousQuery.queryKey;
+      const sameFilters =
+        prev[2] === debouncedSearch &&
+        prev[3] === debouncedFilterNom &&
+        prev[4] === debouncedFilterCarpeta &&
+        prev[5] === debouncedFilterFolder &&
+        prev[6] === orderBy &&
+        prev[7] === orderDir;
+      return sameFilters ? previousData : undefined;
+    },
   });
 
   const updateNameMutation = useMutation({
@@ -127,8 +140,27 @@ export function DocumentsPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteDocument(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      setDetailOpen(false);
+      setSelected(null);
+    },
+  });
+
   const items = data?.items ?? [];
-  const total = data?.total ?? 0;
+  const { total, totalPending, totalReady } = useDocumentListTotal({
+    status: DOCUMENT_STATUS_OK,
+    q: debouncedSearch || undefined,
+    proposed_name: debouncedFilterNom || undefined,
+    company_folder: debouncedFilterCarpeta || undefined,
+    folder: debouncedFilterFolder || undefined,
+    page,
+    pageSize,
+    apiTotal: data?.total ?? 0,
+    itemsLength: items.length,
+  });
 
   useEffect(() => {
     if (total <= 0) return;
@@ -185,6 +217,15 @@ export function DocumentsPage() {
     updateNameMutation.mutate({ id: selected.id, proposed_name: editName });
   }
 
+  function clearFilters() {
+    setSearch("");
+    setFilterNom("");
+    setFilterCarpeta("");
+    setFilterFolder("");
+  }
+
+  const hasActiveFilters = Boolean(search || filterNom || filterCarpeta || filterFolder);
+
   return (
     <div className="page-fill">
       <PageHeader
@@ -221,7 +262,7 @@ export function DocumentsPage() {
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="filter-carpeta">Filtrar per carpeta</label>
+                  <label htmlFor="filter-carpeta">Filtrar per carpeta d&apos;empresa</label>
                   <input
                     id="filter-carpeta"
                     type="search"
@@ -230,10 +271,31 @@ export function DocumentsPage() {
                     onChange={(e) => setFilterCarpeta(e.target.value)}
                   />
                 </div>
+                <div className="field">
+                  <label htmlFor="filter-folder">Filtrar per carpeta d&apos;arxiu</label>
+                  <input
+                    id="filter-folder"
+                    type="search"
+                    placeholder="archive / inbox"
+                    value={filterFolder}
+                    onChange={(e) => setFilterFolder(e.target.value)}
+                  />
+                </div>
               </div>
+              {hasActiveFilters && (
+                <div className="toolbar-row" style={{ marginTop: "0.75rem" }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={clearFilters}
+                  >
+                    Esborrar filtres
+                  </button>
+                </div>
+              )}
             </details>
 
-            {isLoading ? (
+            {isLoading || (isFetching && items.length === 0) ? (
               <p className="empty-state">Carregant…</p>
             ) : items.length === 0 ? (
               <p className="empty-state">No hi ha documents aprovats.</p>
@@ -285,13 +347,18 @@ export function DocumentsPage() {
                 </table>
               </div>
             )}
-            {!isLoading && total > 0 && (
+            {!isLoading && !isFetching && totalReady && total > 0 && (
               <TablePagination
                 page={page}
                 pageSize={pageSize}
                 total={total}
                 onPageChange={setPage}
               />
+            )}
+            {totalPending && (
+              <p className="empty-state" style={{ marginTop: "0.5rem" }}>
+                Actualitzant paginació…
+              </p>
             )}
           </div>
         )}
@@ -319,7 +386,7 @@ export function DocumentsPage() {
                 <input
                   id="doc-name"
                   value={editName}
-                  disabled={updateNameMutation.isPending}
+                  disabled={updateNameMutation.isPending || deleteMutation.isPending}
                   onChange={(e) => setEditName(e.target.value)}
                   onBlur={saveName}
                   onKeyDown={(e) => {
@@ -339,6 +406,15 @@ export function DocumentsPage() {
                 <p className="split-detail-summary">
                   {selected.summary || "—"}
                 </p>
+              </div>
+
+              <div className="toolbar-row" style={{ justifyContent: "flex-end", marginTop: "0.75rem" }}>
+                <DeleteDocumentButton
+                  document={selected}
+                  isPending={deleteMutation.isPending}
+                  disabled={updateNameMutation.isPending}
+                  onDelete={(doc) => deleteMutation.mutate(doc.id)}
+                />
               </div>
             </div>
 

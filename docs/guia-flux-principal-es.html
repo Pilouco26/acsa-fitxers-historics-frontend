@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>ACSA — Guía del flujo principal</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      color: #1a1a1a;
+      max-width: 180mm;
+      margin: 0 auto;
+      padding: 0;
+    }
+    h1 {
+      font-size: 18pt;
+      margin: 0 0 4px;
+      color: #0f3d5c;
+    }
+    .subtitle {
+      margin: 0 0 14px;
+      color: #444;
+      font-size: 10pt;
+    }
+    h2 {
+      font-size: 11.5pt;
+      margin: 14px 0 6px;
+      color: #0f3d5c;
+      border-bottom: 1px solid #c5d9e8;
+      padding-bottom: 2px;
+    }
+    .flow {
+      background: #f4f8fb;
+      border: 1px solid #c5d9e8;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 9pt;
+      line-height: 1.5;
+      margin: 8px 0;
+      white-space: pre-wrap;
+    }
+    ol, ul { margin: 6px 0 6px 18px; padding: 0; }
+    li { margin-bottom: 3px; }
+    p { margin: 6px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      margin: 8px 0;
+    }
+    th, td {
+      border: 1px solid #c5d9e8;
+      padding: 5px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #e8f1f8; }
+    .footer {
+      margin-top: 12px;
+      font-size: 9.5pt;
+      font-weight: 600;
+      color: #0f3d5c;
+    }
+    strong { color: #0f3d5c; }
+  </style>
+</head>
+<body>
+  <h1>ACSA — Guía del flujo principal</h1>
+  <p class="subtitle">
+    <strong>ACSA</strong> (Fitxers històrics) es una aplicación web para digitalizar, clasificar y archivar documentos históricos en PDF.
+    El menú lateral muestra cuatro pasos en orden: <strong>Escáner → Clasificador → Revisión → Documents</strong>.
+  </p>
+
+  <h2>Resumen del flujo</h2>
+  <div class="flow">Escanear PDF  →  Subir al servidor  →  Clasificar con IA  →  Revisar y aprobar  →  Archivo final
+   (Escáner)        (_PENDENTS)         (Clasificador)         (Revisión)          (Documents)</div>
+  <p>Cada documento pasa por estos estados hasta quedar archivado con un nombre y carpeta definitivos.</p>
+
+  <h2>1. Escáner</h2>
+  <p><strong>Objetivo:</strong> introducir PDFs nuevos en la bandeja de entrada del sistema.</p>
+  <ol>
+    <li>Escanee el documento con <strong>Epson Scan</strong> o la aplicación <strong>Escanear</strong> de Windows.</li>
+    <li>Guarde el resultado como <strong>PDF</strong> en su ordenador.</li>
+    <li>En la web, arrastre el PDF a la zona de subida o haga clic para seleccionarlo (máx. 50 MB por archivo; se permiten varios a la vez).</li>
+  </ol>
+  <p>Los archivos se envían al servidor, a la carpeta de entrada <strong>_PENDENTS</strong>. La tabla inferior confirma los PDF subidos con su nombre y ruta.</p>
+
+  <h2>2. Clasificador</h2>
+  <p><strong>Objetivo:</strong> analizar automáticamente los PDF nuevos y proponer nombre, empresa, tipo y resumen.</p>
+  <ol>
+    <li>Pulse <strong>Processar documents</strong>.</li>
+    <li>El sistema ejecuta <strong>OCR</strong> y <strong>clasificación con IA</strong> (Gemini). El proceso puede tardar varios minutos.</li>
+    <li>Siga el progreso en pantalla. Puede cancelar el trabajo si es necesario.</li>
+    <li>Al terminar, los documentos se <strong>asignan al archivo</strong> en modo revisión (aún no son definitivos).</li>
+  </ol>
+  <p>Mientras el trabajo está activo, verá un indicador de progreso también en otras pestañas del menú.</p>
+
+  <h2>3. Revisión</h2>
+  <p><strong>Objetivo:</strong> validar manualmente cada documento clasificado antes de archivarlo.</p>
+  <ol>
+    <li>Abra la lista de <strong>documentos pendientes de revisión</strong>.</li>
+    <li>Haga clic en una fila para ver la <strong>vista previa del PDF</strong>, el <strong>nombre propuesto</strong> y el <strong>resumen</strong>.</li>
+    <li>Corrija el nombre o el resumen si hace falta.</li>
+    <li>Pulse <strong>Aprovar</strong> para confirmar el documento, o <strong>Eliminar</strong> si no debe conservarse.</li>
+  </ol>
+  <p>Las filas en <strong>rojo</strong> pueden indicar <strong>documentos repetidos</strong>; conviene comprobarlos antes de aprobar. Tras aprobar, el documento sale de esta lista.</p>
+
+  <h2>4. Documents</h2>
+  <p><strong>Objetivo:</strong> consultar el <strong>archivo definitivo</strong> de documentos ya aprobados.</p>
+  <ul>
+    <li>Busque por texto, nombre o carpeta de empresa.</li>
+    <li>Ordene las columnas y navegue por páginas.</li>
+    <li>Abra un documento para ver su PDF y, si es necesario, ajustar el nombre.</li>
+  </ul>
+  <p>Aquí solo aparecen documentos con estado <strong>aprobado</strong>; es el catálogo final del archivo histórico.</p>
+
+  <h2>Consejos rápidos</h2>
+  <table>
+    <thead>
+      <tr><th>Paso</th><th>Qué hacer si…</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Escáner</td><td>Solo se aceptan archivos <strong>PDF</strong>.</td></tr>
+      <tr><td>Clasificador</td><td>No hay PDF nuevos en <code>_PENDENTS</code> → vuelva al paso 1.</td></tr>
+      <tr><td>Revisión</td><td>La lista está vacía → espere a que termine el Clasificador.</td></tr>
+      <tr><td>Documents</td><td>No ve un documento → debe estar <strong>aprobado</strong> en Revisión.</td></tr>
+    </tbody>
+  </table>
+  <p class="footer">Orden habitual: escanear y subir → clasificar → revisar uno a uno → consultar en Documents.</p>
+</body>
+</html>
