@@ -15,8 +15,8 @@ export function useDocumentFilterOptions(status: string) {
 
       for (const doc of docs) {
         if (doc.doc_type_ca) docTypeCa.add(doc.doc_type_ca);
-        if (doc.folder) folders.add(doc.folder);
         if (doc.company_folder) folders.add(doc.company_folder);
+        if (doc.target_folder) folders.add(doc.target_folder);
         if (doc.proposed_name) proposedNames.add(doc.proposed_name);
         if (doc.original_name) originalNames.add(doc.original_name);
       }

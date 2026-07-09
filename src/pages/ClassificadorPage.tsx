@@ -3,8 +3,17 @@ import { PageHeader } from "@/components/PageHeader";
 import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
 
 export function ClassificadorPage() {
-  const { job, jobId, error, busy, isStarting, isAssigning, startAnalyze, cancel } =
-    useClassificadorJob();
+  const {
+    job,
+    jobId,
+    error,
+    authError,
+    busy,
+    isStarting,
+    isAssigning,
+    startAnalyze,
+    cancel,
+  } = useClassificadorJob();
 
   return (
     <>
@@ -13,7 +22,21 @@ export function ClassificadorPage() {
         description="Analitzeu i classifiqueu els PDF nous de la safata d'entrada. Quan acabi, reviseu els noms proposats a la pestanya Revisió."
       />
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && (
+        <div className="alert alert-error" role="alert">
+          {authError ? (
+            <>
+              <strong>Accés no autoritzat</strong>
+              <p style={{ margin: "0.5rem 0 0" }}>
+                La clau API de gemini podria estar mal configurada. Poseu-vos en contacte amb
+                un administrador.
+              </p>
+            </>
+          ) : (
+            error
+          )}
+        </div>
+      )}
 
       <div className="card">
         <p style={{ margin: "0 0 1rem", color: "var(--color-text-secondary)" }}>

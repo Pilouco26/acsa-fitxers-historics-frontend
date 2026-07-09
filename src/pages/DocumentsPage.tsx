@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteDocument, listDocuments, updateDocument } from "@/api/client";
+import { deleteDocument, listDocuments, listFolders, moveDocument, updateDocument } from "@/api/client";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { FilterAutocompleteInput } from "@/components/FilterAutocompleteInput";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,7 +10,6 @@ import {
   DOCUMENT_LIST_MAX_PAGE_SIZE,
   DOCUMENT_LIST_MIN_PAGE_SIZE,
   DOCUMENT_STATUS_OK,
-  LIST_PANEL_FIXED_HEIGHT_PX,
   LIST_PANEL_ROW_HEIGHT_PX,
 } from "@/constants/globals";
 import { DOCUMENT_LANGUAGE_OPTIONS } from "@/constants/documentFilters";
@@ -21,10 +20,15 @@ import { fetchAllDocuments } from "@/utils/fetchAllDocuments";
 import { hasDocumentListFilters } from "@/utils/documentListTotal";
 import { matchesDocumentFilters } from "@/utils/matchDocumentFilters";
 import { sortDocuments } from "@/utils/sortDocuments";
+import { buildArchiveFolderSuggestions } from "@/utils/folderSuggestions";
 
 function sortIndicator(active: boolean, dir: "asc" | "desc") {
   if (!active) return "↕";
   return dir === "asc" ? "↑" : "↓";
+}
+
+function documentFolder(doc: DocumentOut): string {
+  return doc.company_folder ?? "";
 }
 
 export function DocumentsPage() {
@@ -43,6 +47,11 @@ export function DocumentsPage() {
   const debouncedFilterOriginalName = useDebouncedValue(filterOriginalName);
   const debouncedFilterFinalDate = useDebouncedValue(filterFinalDate);
   const { data: filterOptions } = useDocumentFilterOptions(DOCUMENT_STATUS_OK);
+  const { data: archiveFolders } = useQuery({
+    queryKey: ["folders", "archive"],
+    queryFn: () => listFolders({ root: "archive" }),
+    staleTime: 5 * 60 * 1000,
+  });
   const [orderBy, setOrderBy] = useState<DocumentOrderBy | null>(null);
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
@@ -51,7 +60,29 @@ export function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewRotation, setPreviewRotation] = useState(0);
   const [editName, setEditName] = useState("");
+  const [editFolder, setEditFolder] = useState("");
   const listCardRef = useRef<HTMLDivElement>(null);
+  const tableAreaRef = useRef<HTMLDivElement>(null);
+
+  const folderSuggestions = useMemo(
+    () =>
+      buildArchiveFolderSuggestions({
+        archiveFolderNames: archiveFolders?.items.map((folder) => folder.name),
+        documentFolderNames: filterOptions?.folders,
+        currentFolder: editFolder,
+      }),
+    [archiveFolders?.items, editFolder, filterOptions?.folders],
+  );
+
+  const existingFolderSuggestions = useMemo(
+    () =>
+      buildArchiveFolderSuggestions({
+        archiveFolderNames: archiveFolders?.items.map((folder) => folder.name),
+        documentFolderNames: filterOptions?.folders,
+        currentFolder: "",
+      }),
+    [archiveFolders?.items, filterOptions?.folders],
+  );
 
   useEffect(() => {
     setPage(0);
@@ -68,38 +99,6 @@ export function DocumentsPage() {
   ]);
 
   const detailVisible = Boolean(selected && detailOpen);
-
-  useEffect(() => {
-    // Keep rows-per-page responsive without introducing scrollbars.
-    // The list panel unmounts in preview mode, so we must re-attach when it returns.
-    if (detailVisible) return;
-
-    const el = listCardRef.current;
-    if (!el) return;
-
-    const compute = () => {
-      const height = el.getBoundingClientRect().height;
-
-      const next = Math.max(
-        DOCUMENT_LIST_MIN_PAGE_SIZE,
-        Math.min(
-          DOCUMENT_LIST_MAX_PAGE_SIZE,
-          Math.floor((height - LIST_PANEL_FIXED_HEIGHT_PX) / LIST_PANEL_ROW_HEIGHT_PX),
-        ),
-      );
-
-      setPageSize((prev) => (prev === next ? prev : next));
-    };
-
-    const raf = window.requestAnimationFrame(() => compute());
-    const ro = new ResizeObserver(() => compute());
-    ro.observe(el);
-
-    return () => {
-      window.cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, [detailVisible]);
 
   const activeFilters = useMemo(
     () => ({
@@ -189,13 +188,26 @@ export function DocumentsPage() {
     ? allDocumentsQuery.refetch
     : serverListQuery.refetch;
 
-  const updateNameMutation = useMutation({
-    mutationFn: ({ id, proposed_name }: { id: number; proposed_name: string }) =>
-      updateDocument(id, { proposed_name }),
+  const updateDocumentMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof updateDocument>[1] }) =>
+      updateDocument(id, body),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       setSelected((prev) => (prev?.id === updated.id ? updated : prev));
       setEditName(updated.proposed_name ?? updated.original_name ?? "");
+    },
+  });
+
+  const moveDocumentMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof moveDocument>[1] }) =>
+      moveDocument(id, body),
+    onSuccess: (_result, { id, body }) => {
+      const destFolder = (body.dest_folder ?? "").trim();
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      setSelected((prev) =>
+        prev?.id === id ? { ...prev, company_folder: destFolder } : prev,
+      );
+      setEditFolder(destFolder);
     },
   });
 
@@ -214,26 +226,80 @@ export function DocumentsPage() {
   const totalPending = isFetching && items.length > 0;
 
   useEffect(() => {
+    // Keep rows-per-page responsive without introducing scrollbars.
+    // The list panel unmounts in preview mode, so we must re-attach when it returns.
+    if (detailVisible) return;
+
+    const cardEl = listCardRef.current;
+    const tableEl = tableAreaRef.current;
+    if (!cardEl || !tableEl) return;
+
+    const compute = () => {
+      window.requestAnimationFrame(() => {
+        const tableAreaHeight = tableEl.getBoundingClientRect().height;
+        const headerHeight =
+          tableEl.querySelector("thead")?.getBoundingClientRect().height ??
+          LIST_PANEL_ROW_HEIGHT_PX;
+        const bodyHeight = Math.max(0, tableAreaHeight - headerHeight);
+
+        const next = Math.max(
+          DOCUMENT_LIST_MIN_PAGE_SIZE,
+          Math.min(
+            DOCUMENT_LIST_MAX_PAGE_SIZE,
+            Math.floor(bodyHeight / LIST_PANEL_ROW_HEIGHT_PX),
+          ),
+        );
+
+        setPageSize((prev) => (prev === next ? prev : next));
+      });
+    };
+
+    const raf = window.requestAnimationFrame(() => compute());
+    const ro = new ResizeObserver(() => compute());
+    ro.observe(cardEl);
+    ro.observe(tableEl);
+
+    const filtersEl = cardEl.querySelector("details.table-filters-advanced");
+    filtersEl?.addEventListener("toggle", compute);
+    if (filtersEl) ro.observe(filtersEl);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
+      filtersEl?.removeEventListener("toggle", compute);
+    };
+  }, [detailVisible, isLoading, isFetching]);
+
+  useEffect(() => {
     if (total <= 0) return;
     const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
     if (page > maxPage) setPage(maxPage);
   }, [total, page, pageSize]);
 
-  const showDetailToggle = items.length > 0;
   const splitClassName = [
     "split-view",
     !detailVisible && "split-view--auto",
+    !detailVisible && "split-view--collapsed",
     detailVisible && "split-view--detail-open",
-    showDetailToggle && !detailVisible && "split-view--collapsed",
   ]
     .filter(Boolean)
     .join(" ");
 
   const emptyRows = Math.max(0, pageSize - items.length);
 
+  const tableOverlayMessage =
+    isLoading || (isFetching && items.length === 0)
+      ? "Carregant…"
+      : items.length === 0
+        ? hasActiveFilters
+          ? "No s'han trobat documents amb aquests filtres."
+          : "No hi ha documents aprovats."
+        : null;
+
   function selectDoc(doc: DocumentOut) {
     setSelected(doc);
     setEditName(doc.proposed_name ?? doc.original_name ?? "");
+    setEditFolder(documentFolder(doc));
     setDetailOpen(true);
   }
 
@@ -265,7 +331,40 @@ export function DocumentsPage() {
     const current = selected.proposed_name ?? selected.original_name ?? "";
     if (editName === current) return;
 
-    updateNameMutation.mutate({ id: selected.id, proposed_name: editName });
+    updateDocumentMutation.mutate({ id: selected.id, body: { proposed_name: editName } });
+  }
+
+  function saveFolder() {
+    if (!selected) return;
+
+    const destFolder = editFolder.trim();
+    if (!destFolder) return;
+
+    const current = documentFolder(selected);
+    if (destFolder === current) return;
+
+    const destKey = destFolder.toLocaleLowerCase("ca");
+    const isExistingFolder = existingFolderSuggestions.some(
+      (folder) => folder.toLocaleLowerCase("ca") === destKey,
+    );
+    if (!isExistingFolder) {
+      const ok = window.confirm(
+        `Aquesta carpeta no existeix a la llista.\n\nVoleu crear-la i moure el document a: "${destFolder}"?`,
+      );
+      if (!ok) {
+        setEditFolder(current);
+        return;
+      }
+    }
+
+    moveDocumentMutation.mutate({
+      id: selected.id,
+      body: {
+        dest_folder: destFolder,
+        dest_name: null,
+        dry_run: false,
+      },
+    });
   }
 
   function clearFilters() {
@@ -277,6 +376,11 @@ export function DocumentsPage() {
     setFilterFinalDate("");
     setFilterLanguage("");
   }
+
+  const isSaving =
+    updateDocumentMutation.isPending ||
+    moveDocumentMutation.isPending ||
+    deleteMutation.isPending;
 
   const hasFilterUiActive = Boolean(
     search ||
@@ -337,21 +441,14 @@ export function DocumentsPage() {
                   suggestions={filterOptions?.originalNames ?? []}
                   onChange={setFilterOriginalName}
                 />
-                <div className="field">
-                  <label htmlFor="filter-doc-type-ca">Tipus (CA)</label>
-                  <select
-                    id="filter-doc-type-ca"
-                    value={filterDocTypeCa}
-                    onChange={(e) => setFilterDocTypeCa(e.target.value)}
-                  >
-                    <option value="">Tots</option>
-                    {filterOptions?.docTypeCa.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <FilterAutocompleteInput
+                  id="filter-doc-type-ca"
+                  label="Tipus (CA)"
+                  placeholder="Tots"
+                  value={filterDocTypeCa}
+                  suggestions={filterOptions?.docTypeCa ?? []}
+                  onChange={setFilterDocTypeCa}
+                />
                 <div className="field">
                   <label htmlFor="filter-final-date">Data final</label>
                   <input
@@ -362,21 +459,14 @@ export function DocumentsPage() {
                     onChange={(e) => setFilterFinalDate(e.target.value)}
                   />
                 </div>
-                <div className="field">
-                  <label htmlFor="filter-language">Idioma</label>
-                  <select
-                    id="filter-language"
-                    value={filterLanguage}
-                    onChange={(e) => setFilterLanguage(e.target.value)}
-                  >
-                    <option value="">Tots</option>
-                    {DOCUMENT_LANGUAGE_OPTIONS.map(({ value, label }) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <FilterAutocompleteInput
+                  id="filter-language"
+                  label="Idioma"
+                  placeholder="ca, es, fr…"
+                  value={filterLanguage}
+                  suggestions={DOCUMENT_LANGUAGE_OPTIONS.map((option) => option.value)}
+                  onChange={setFilterLanguage}
+                />
               </div>
               {hasFilterUiActive && (
                 <div className="toolbar-row" style={{ marginTop: "0.75rem" }}>
@@ -391,63 +481,64 @@ export function DocumentsPage() {
               )}
             </details>
 
-            {isLoading || (isFetching && items.length === 0) ? (
-              <p className="empty-state">Carregant…</p>
-            ) : items.length === 0 ? (
-              <p className="empty-state">
-                {hasActiveFilters
-                  ? "No s'han trobat documents amb aquests filtres."
-                  : "No hi ha documents aprovats."}
-              </p>
-            ) : (
-              <div className="table-responsive table-responsive--no-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>
-                        <button
-                          type="button"
-                          className="table-sort-btn"
-                          onClick={() => toggleSort("proposed_name")}
-                        >
-                          Nom {sortIndicator(orderBy === "proposed_name", orderDir)}
-                        </button>
-                      </th>
-                      <th>
-                        <button
-                          type="button"
-                          className="table-sort-btn"
-                          onClick={() => toggleSort("company_folder")}
-                        >
-                          Carpeta {sortIndicator(orderBy === "company_folder", orderDir)}
-                        </button>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((doc) => (
-                      <tr
-                        key={doc.id}
-                        className={selected?.id === doc.id ? "selected" : ""}
-                        onClick={() => selectDoc(doc)}
-                        style={{ cursor: "pointer" }}
+            <div
+              ref={tableAreaRef}
+              className="table-responsive table-responsive--no-scroll table-list-body"
+            >
+              {tableOverlayMessage && (
+                <p className="table-list-overlay" role="status">
+                  {tableOverlayMessage}
+                </p>
+              )}
+              <table
+                className="data-table data-table--list"
+                style={{ "--page-size": pageSize } as CSSProperties}
+              >
+                <thead>
+                  <tr>
+                    <th>
+                      <button
+                        type="button"
+                        className="table-sort-btn"
+                        onClick={() => toggleSort("proposed_name")}
                       >
-                        <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
-                        <td>{doc.company_folder ?? "—"}</td>
+                        Nom {sortIndicator(orderBy === "proposed_name", orderDir)}
+                      </button>
+                    </th>
+                    <th>
+                      <button
+                        type="button"
+                        className="table-sort-btn"
+                        onClick={() => toggleSort("company_folder")}
+                      >
+                        Carpeta {sortIndicator(orderBy === "company_folder", orderDir)}
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((doc) => (
+                    <tr
+                      key={doc.id}
+                      className={selected?.id === doc.id ? "selected" : ""}
+                      onClick={() => selectDoc(doc)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
+                      <td>{documentFolder(doc) || "—"}</td>
+                    </tr>
+                  ))}
+                  {emptyRows > 0 &&
+                    Array.from({ length: emptyRows }).map((_, idx) => (
+                      <tr key={`empty-${idx}`} className="data-table-row--empty" aria-hidden="true">
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
                       </tr>
                     ))}
-                    {emptyRows > 0 &&
-                      Array.from({ length: emptyRows }).map((_, idx) => (
-                        <tr key={`empty-${idx}`} className="data-table-row--empty" aria-hidden="true">
-                          <td>&nbsp;</td>
-                          <td>&nbsp;</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {!isLoading && !isFetching && totalReady && total > 0 && (
+                </tbody>
+              </table>
+            </div>
+            {!isLoading && !isFetching && totalReady && (
               <TablePagination
                 page={page}
                 pageSize={pageSize}
@@ -486,7 +577,7 @@ export function DocumentsPage() {
                 <input
                   id="doc-name"
                   value={editName}
-                  disabled={updateNameMutation.isPending || deleteMutation.isPending}
+                  disabled={isSaving}
                   onChange={(e) => setEditName(e.target.value)}
                   onBlur={saveName}
                   onKeyDown={(e) => {
@@ -497,10 +588,17 @@ export function DocumentsPage() {
                 />
               </div>
 
-              <div className="field">
-                <label>Carpeta</label>
-                <p className="split-detail-summary">{selected.company_folder || "—"}</p>
-              </div>
+              <FilterAutocompleteInput
+                id="doc-folder"
+                label="Carpeta"
+                placeholder="Carpeta d'arxiu"
+                value={editFolder}
+                suggestions={folderSuggestions}
+                onChange={setEditFolder}
+                disabled={isSaving}
+                onCommit={saveFolder}
+                maxSuggestions={0}
+              />
               <div className="field">
                 <label>Resum</label>
                 <p className="split-detail-summary">
@@ -512,7 +610,7 @@ export function DocumentsPage() {
                 <DeleteDocumentButton
                   document={selected}
                   isPending={deleteMutation.isPending}
-                  disabled={updateNameMutation.isPending}
+                  disabled={updateDocumentMutation.isPending || moveDocumentMutation.isPending}
                   onDelete={(doc) => deleteMutation.mutate(doc.id)}
                 />
               </div>

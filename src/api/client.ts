@@ -9,6 +9,8 @@ import type {
   CompareResponse,
   DocumentFilters,
   DocumentListResponse,
+  DocumentMoveRequest,
+  DocumentMoveResponse,
   DocumentOut,
   DocumentUpdate,
   EmailAssignRequest,
@@ -42,6 +44,13 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+export const API_KEY_UNAUTHORIZED_MESSAGE =
+  "Accés no autoritzat. La clau API podria estar mal configurada. Poseu-vos en contacte amb un administrador.";
+
+export function isUnauthorizedError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status === 401;
 }
 
 function buildHeaders(extra?: HeadersInit): HeadersInit {
@@ -229,6 +238,21 @@ export function deleteDocument(id: number): Promise<void> {
     `/documents/${id}`,
     { method: "DELETE" },
     { success: "Eliminat", errorPrefix: "Error en eliminar" },
+  );
+}
+
+export function moveDocument(
+  id: number,
+  body: DocumentMoveRequest,
+): Promise<DocumentMoveResponse> {
+  return request<DocumentMoveResponse>(
+    `/documents/${id}/move`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Document mogut", errorPrefix: "Error en moure" },
   );
 }
 

@@ -8,9 +8,12 @@ export function useJobPolling(
   jobId: string | null,
   intervalMs = 2000,
   onUpdate?: (job: JobOut) => void,
+  onError?: (err: unknown) => boolean | void,
 ) {
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   useEffect(() => {
     if (!jobId) return;
@@ -25,8 +28,9 @@ export function useJobPolling(
         if (!TERMINAL.has(job.status)) {
           timer = window.setTimeout(poll, intervalMs);
         }
-      } catch {
-        if (active) {
+      } catch (err) {
+        const shouldRetry = onErrorRef.current?.(err) !== false;
+        if (active && shouldRetry) {
           timer = window.setTimeout(poll, intervalMs * 2);
         }
       }

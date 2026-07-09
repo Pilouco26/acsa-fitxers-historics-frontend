@@ -8,7 +8,14 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { assignDocuments, cancelJob, startAnalyzeJob, ApiError } from "@/api/client";
+import {
+  assignDocuments,
+  cancelJob,
+  startAnalyzeJob,
+  ApiError,
+  API_KEY_UNAUTHORIZED_MESSAGE,
+  isUnauthorizedError,
+} from "@/api/client";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import type { JobOut } from "@/api/types";
 
@@ -16,6 +23,7 @@ interface ClassificadorJobContextValue {
   jobId: string | null;
   job: JobOut | null;
   error: string | null;
+  authError: boolean;
   isStarting: boolean;
   isAssigning: boolean;
   busy: boolean;
@@ -31,10 +39,30 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobOut | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const assignedForJobRef = useRef<string | null>(null);
 
-  useJobPolling(jobId, 2000, setJob);
+  const stopForUnauthorized = useCallback(() => {
+    setAuthError(true);
+    setError(API_KEY_UNAUTHORIZED_MESSAGE);
+    setJobId(null);
+    setJob(null);
+    setIsAssigning(false);
+  }, []);
+
+  const handlePollingError = useCallback(
+    (err: unknown) => {
+      if (isUnauthorizedError(err)) {
+        stopForUnauthorized();
+        return false;
+      }
+      return true;
+    },
+    [stopForUnauthorized],
+  );
+
+  useJobPolling(jobId, 2000, setJob, handlePollingError);
 
   useEffect(() => {
     if (!jobId || job?.status !== "completed") return;
@@ -56,6 +84,10 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
       })
       .catch((err) => {
         if (!cancelled) {
+          if (isUnauthorizedError(err)) {
+            stopForUnauthorized();
+            return;
+          }
           setError(
             err instanceof ApiError ? err.message : "Error en l'assignació",
           );
@@ -68,7 +100,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [jobId, job?.status]);
+  }, [jobId, job?.status, stopForUnauthorized]);
 
   const analyzeMutation = useMutation({
     mutationFn: () =>
@@ -82,11 +114,18 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     onSuccess: (data) => {
       assignedForJobRef.current = null;
       setIsAssigning(false);
+      setAuthError(false);
       setJobId(data.job_id);
       setJob(null);
       setError(null);
     },
     onError: (err) => {
+      if (isUnauthorizedError(err)) {
+        setAuthError(true);
+        setError(API_KEY_UNAUTHORIZED_MESSAGE);
+        return;
+      }
+      setAuthError(false);
       setError(
         err instanceof ApiError ? err.message : "Error en iniciar l'anàlisi",
       );
@@ -113,6 +152,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
         jobId,
         job,
         error,
+        authError,
         isStarting,
         isAssigning,
         busy,

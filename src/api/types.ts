@@ -42,6 +42,23 @@ export interface DocumentUpdate {
   approve?: boolean;
 }
 
+export interface DocumentMoveRequest {
+  dest_folder: string | null;
+  dest_name?: string | null;
+  dry_run?: boolean;
+}
+
+export interface DocumentMoveResponse {
+  document_id: number;
+  src_path: string;
+  dest_path: string;
+  relative_path: string;
+  filename: string;
+  dry_run: boolean;
+  unchanged?: boolean;
+  collision_resolved?: boolean;
+}
+
 export type DocumentOrderBy = "proposed_name" | "company_folder";
 export type DocumentOrderDir = "asc" | "desc";
 

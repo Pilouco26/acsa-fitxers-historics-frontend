@@ -1,3 +1,5 @@
+import { useEffect, useId, useRef, useState } from "react";
+
 interface FilterAutocompleteInputProps {
   id: string;
   label: string;
@@ -5,6 +7,18 @@ interface FilterAutocompleteInputProps {
   value: string;
   suggestions: string[];
   onChange: (value: string) => void;
+  disabled?: boolean;
+  onCommit?: () => void;
+  /** Max dropdown options after matching; 0 = no cap. */
+  maxSuggestions?: number;
+}
+
+function matchSuggestions(suggestions: string[], value: string): string[] {
+  const query = value.trim().toLocaleLowerCase("ca");
+  if (!query) return suggestions;
+  return suggestions.filter((suggestion) =>
+    suggestion.toLocaleLowerCase("ca").includes(query),
+  );
 }
 
 export function FilterAutocompleteInput({
@@ -14,26 +28,149 @@ export function FilterAutocompleteInput({
   value,
   suggestions,
   onChange,
+  disabled = false,
+  onCommit,
+  maxSuggestions = 5,
 }: FilterAutocompleteInputProps) {
-  const listId = `${id}-suggestions`;
+  const listId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+
+  const matchedSuggestions = matchSuggestions(suggestions, value);
+  const limitedSuggestions =
+    maxSuggestions > 0
+      ? matchedSuggestions.slice(0, maxSuggestions)
+      : matchedSuggestions;
+
+  const showDropdown = open && !disabled && limitedSuggestions.length > 0;
+
+  useEffect(() => {
+    setHighlightIndex(-1);
+  }, [value, limitedSuggestions.length]);
+
+  useEffect(() => {
+    if (!showDropdown) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [showDropdown]);
+
+  function selectSuggestion(suggestion: string) {
+    onChange(suggestion);
+    setOpen(false);
+    setHighlightIndex(-1);
+    onCommit?.();
+    inputRef.current?.focus();
+  }
+
+  function handleBlur() {
+    window.setTimeout(() => {
+      if (!rootRef.current?.contains(document.activeElement)) {
+        setOpen(false);
+        onCommit?.();
+      }
+    }, 0);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      setHighlightIndex(-1);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setHighlightIndex(0);
+        return;
+      }
+      setHighlightIndex((index) =>
+        index < limitedSuggestions.length - 1 ? index + 1 : 0,
+      );
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setHighlightIndex(limitedSuggestions.length - 1);
+        return;
+      }
+      setHighlightIndex((index) =>
+        index > 0 ? index - 1 : limitedSuggestions.length - 1,
+      );
+      return;
+    }
+
+    if (event.key === "Enter") {
+      if (showDropdown && highlightIndex >= 0) {
+        event.preventDefault();
+        selectSuggestion(limitedSuggestions[highlightIndex]!);
+        return;
+      }
+      event.currentTarget.blur();
+    }
+  }
 
   return (
-    <div className="field">
+    <div className="field autocomplete-field" ref={rootRef}>
       <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        type="search"
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        list={listId}
-        autoComplete="off"
-      />
-      <datalist id={listId}>
-        {suggestions.map((suggestion) => (
-          <option key={suggestion} value={suggestion} />
-        ))}
-      </datalist>
+      <div className="autocomplete-control">
+        <input
+          ref={inputRef}
+          id={id}
+          type="search"
+          placeholder={placeholder}
+          value={value}
+          disabled={disabled}
+          role="combobox"
+          aria-expanded={showDropdown}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          autoComplete="off"
+          onChange={(event) => {
+            onChange(event.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+        />
+        {showDropdown && (
+          <ul id={listId} className="autocomplete-dropdown" role="listbox">
+            {limitedSuggestions.map((suggestion, index) => (
+              <li
+                key={suggestion}
+                role="option"
+                aria-selected={index === highlightIndex}
+                className={[
+                  "autocomplete-option",
+                  index === highlightIndex && "is-active",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setHighlightIndex(index)}
+                onClick={() => selectSuggestion(suggestion)}
+              >
+                {suggestion}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

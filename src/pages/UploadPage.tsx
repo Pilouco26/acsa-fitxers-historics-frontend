@@ -22,7 +22,16 @@ const SCAN_STEPS = [
 
 ] as const;
 
+const PDF_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/x-pdf",
+]);
 
+function isPdfFile(file: File): boolean {
+  if (!file.name.toLowerCase().endsWith(".pdf")) return false;
+  const mime = file.type.toLowerCase();
+  return !mime || PDF_MIME_TYPES.has(mime);
+}
 
 export function UploadPage() {
 
@@ -71,31 +80,30 @@ export function UploadPage() {
 
 
   const handleFiles = useCallback(
-
     (fileList: FileList | null) => {
-
       if (!fileList?.length) return;
 
-      const pdfs = Array.from(fileList).filter((f) =>
-
-        f.name.toLowerCase().endsWith(".pdf"),
-
-      );
+      const files = Array.from(fileList);
+      const pdfs = files.filter(isPdfFile);
+      const rejected = files.filter((f) => !isPdfFile(f));
 
       if (!pdfs.length) {
-
         setError("Només es permeten fitxers PDF");
-
+        if (inputRef.current) inputRef.current.value = "";
         return;
+      }
 
+      if (rejected.length > 0) {
+        setError(
+          `S'han ignorat ${rejected.length} fitxer(s) no PDF: ${rejected.map((f) => f.name).join(", ")}`,
+        );
+      } else {
+        setError(null);
       }
 
       mutation.mutate(pdfs);
-
     },
-
     [mutation],
-
   );
 
 

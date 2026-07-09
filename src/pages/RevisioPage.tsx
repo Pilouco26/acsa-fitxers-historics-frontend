@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,7 +16,6 @@ import {
   DOCUMENT_LIST_MIN_PAGE_SIZE,
   DOCUMENT_STATUS_OK,
   DOCUMENT_STATUS_REVISIO,
-  LIST_PANEL_FIXED_HEIGHT_PX,
   LIST_PANEL_ROW_HEIGHT_PX,
 } from "@/constants/globals";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -38,6 +37,7 @@ export function RevisioPage() {
 
   const [error, setError] = useState<string | null>(null);
   const listCardRef = useRef<HTMLDivElement>(null);
+  const tableAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPage(0);
@@ -45,39 +45,7 @@ export function RevisioPage() {
 
   const detailVisible = Boolean(selected && detailOpen);
 
-  useEffect(() => {
-    // Keep rows-per-page responsive without introducing scrollbars.
-    // The list panel unmounts in preview mode, so we must re-attach when it returns.
-    if (detailVisible) return;
-
-    const el = listCardRef.current;
-    if (!el) return;
-
-    const compute = () => {
-      const height = el.getBoundingClientRect().height;
-
-      const next = Math.max(
-        DOCUMENT_LIST_MIN_PAGE_SIZE,
-        Math.min(
-          DOCUMENT_LIST_MAX_PAGE_SIZE,
-          Math.floor((height - LIST_PANEL_FIXED_HEIGHT_PX) / LIST_PANEL_ROW_HEIGHT_PX),
-        ),
-      );
-
-      setPageSize((prev) => (prev === next ? prev : next));
-    };
-
-    const raf = window.requestAnimationFrame(() => compute());
-    const ro = new ResizeObserver(() => compute());
-    ro.observe(el);
-
-    return () => {
-      window.cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, [detailVisible]);
-
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["documents", DOCUMENT_STATUS_REVISIO, debouncedSearch, page, pageSize],
     queryFn: () =>
       listDocuments({
@@ -91,6 +59,46 @@ export function RevisioPage() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+
+  useEffect(() => {
+    // Keep rows-per-page responsive without introducing scrollbars.
+    // The list panel unmounts in preview mode, so we must re-attach when it returns.
+    if (detailVisible) return;
+
+    const cardEl = listCardRef.current;
+    const tableEl = tableAreaRef.current;
+    if (!cardEl || !tableEl) return;
+
+    const compute = () => {
+      window.requestAnimationFrame(() => {
+        const tableAreaHeight = tableEl.getBoundingClientRect().height;
+        const headerHeight =
+          tableEl.querySelector("thead")?.getBoundingClientRect().height ??
+          LIST_PANEL_ROW_HEIGHT_PX;
+        const bodyHeight = Math.max(0, tableAreaHeight - headerHeight);
+
+        const next = Math.max(
+          DOCUMENT_LIST_MIN_PAGE_SIZE,
+          Math.min(
+            DOCUMENT_LIST_MAX_PAGE_SIZE,
+            Math.floor(bodyHeight / LIST_PANEL_ROW_HEIGHT_PX),
+          ),
+        );
+
+        setPageSize((prev) => (prev === next ? prev : next));
+      });
+    };
+
+    const raf = window.requestAnimationFrame(() => compute());
+    const ro = new ResizeObserver(() => compute());
+    ro.observe(cardEl);
+    ro.observe(tableEl);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [detailVisible, isLoading, isFetching]);
 
   useEffect(() => {
     if (total <= 0) return;
@@ -171,17 +179,23 @@ export function RevisioPage() {
     }
   }
 
-  const showDetailToggle = items.length > 0;
   const splitClassName = [
     "split-view",
     !detailVisible && "split-view--auto",
+    !detailVisible && "split-view--collapsed",
     detailVisible && "split-view--detail-open",
-    showDetailToggle && !detailVisible && "split-view--collapsed",
   ]
     .filter(Boolean)
     .join(" ");
 
   const emptyRows = Math.max(0, pageSize - items.length);
+
+  const tableOverlayMessage =
+    isLoading || (isFetching && items.length === 0)
+      ? "Carregant…"
+      : items.length === 0
+        ? "No hi ha documents pendents de revisió."
+        : null;
 
   return (
     <div className="page-fill">
@@ -192,7 +206,7 @@ export function RevisioPage() {
             Revisió de documents classificats. Cliqueu un fitxer per previsualitzar el PDF, ajustar el
             nom/resum i aprovar-lo.{" "}
             <span className="revisio-repeated-legend">
-              Les files en vermell poden esser documents repetits
+              El fons vermell indica possibles documents repetits.
             </span>
           </>
         }
@@ -216,55 +230,60 @@ export function RevisioPage() {
               </button>
             </div>
 
-            {isLoading ? (
-              <p className="empty-state">Carregant…</p>
-            ) : items.length === 0 ? (
-              <p className="empty-state">No hi ha documents pendents de revisió.</p>
-            ) : (
-              <div className="table-responsive table-responsive--no-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Empresa</th>
-                      <th>Tipus</th>
-                      <th>Data</th>
+            <div
+              ref={tableAreaRef}
+              className="table-responsive table-responsive--no-scroll table-list-body"
+            >
+              {tableOverlayMessage && (
+                <p className="table-list-overlay" role="status">
+                  {tableOverlayMessage}
+                </p>
+              )}
+              <table
+                className="data-table data-table--list"
+                style={{ "--page-size": pageSize } as CSSProperties}
+              >
+                <thead>
+                  <tr>
+                    <th>Nom</th>
+                    <th>Empresa</th>
+                    <th>Tipus</th>
+                    <th>Data</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((doc) => (
+                    <tr
+                      key={doc.id}
+                      className={[
+                        selected?.id === doc.id && "selected",
+                        doc.status === "repeated" && "data-table-row--repeated",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => selectDoc(doc)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
+                      <td>{doc.company ?? "—"}</td>
+                      <td>{doc.doc_type_ca ?? doc.doc_type ?? "—"}</td>
+                      <td>{doc.final_date ?? "—"}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((doc) => (
-                      <tr
-                        key={doc.id}
-                        className={[
-                          selected?.id === doc.id && "selected",
-                          doc.status === "repeated" && "data-table-row--repeated",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        onClick={() => selectDoc(doc)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
-                        <td>{doc.company ?? "—"}</td>
-                        <td>{doc.doc_type_ca ?? doc.doc_type ?? "—"}</td>
-                        <td>{doc.final_date ?? "—"}</td>
+                  ))}
+                  {emptyRows > 0 &&
+                    Array.from({ length: emptyRows }).map((_, idx) => (
+                      <tr key={`empty-${idx}`} className="data-table-row--empty" aria-hidden="true">
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
                       </tr>
                     ))}
-                    {emptyRows > 0 &&
-                      Array.from({ length: emptyRows }).map((_, idx) => (
-                        <tr key={`empty-${idx}`} className="data-table-row--empty" aria-hidden="true">
-                          <td>&nbsp;</td>
-                          <td>&nbsp;</td>
-                          <td>&nbsp;</td>
-                          <td>&nbsp;</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                </tbody>
+              </table>
+            </div>
 
-            {!isLoading && total > 0 && (
+            {!isLoading && !isFetching && (
               <TablePagination
                 page={page}
                 pageSize={pageSize}

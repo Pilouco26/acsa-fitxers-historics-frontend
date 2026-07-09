@@ -11,13 +11,13 @@ export function TablePagination({
   total,
   onPageChange,
 }: TablePaginationProps) {
-  if (total === 0) return null;
-
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages - 1);
-  const start = safePage * pageSize + 1;
-  const end = Math.min((safePage + 1) * pageSize, total);
+  const start = total === 0 ? 0 : safePage * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min((safePage + 1) * pageSize, total);
 
+  // Always render the same markup (even with zero results) so the panel's
+  // height stays constant instead of collapsing when the list is empty.
   return (
     <div className="table-pagination">
       <span className="table-pagination-info">
@@ -27,7 +27,7 @@ export function TablePagination({
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={page <= 0}
+          disabled={page <= 0 || total === 0}
           onClick={() => onPageChange(page - 1)}
         >
           Anterior
@@ -38,7 +38,7 @@ export function TablePagination({
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={page >= totalPages - 1}
+          disabled={page >= totalPages - 1 || total === 0}
           onClick={() => onPageChange(page + 1)}
         >
           Següent
