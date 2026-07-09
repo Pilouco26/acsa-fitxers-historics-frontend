@@ -9,6 +9,7 @@ interface FilterAutocompleteInputProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   onCommit?: () => void;
+  onCommitValue?: (value: string) => void;
   /** Max dropdown options after matching; 0 = no cap. */
   maxSuggestions?: number;
 }
@@ -30,6 +31,7 @@ export function FilterAutocompleteInput({
   onChange,
   disabled = false,
   onCommit,
+  onCommitValue,
   maxSuggestions = 5,
 }: FilterAutocompleteInputProps) {
   const listId = useId();
@@ -67,7 +69,11 @@ export function FilterAutocompleteInput({
     onChange(suggestion);
     setOpen(false);
     setHighlightIndex(-1);
-    onCommit?.();
+    if (onCommitValue) {
+      onCommitValue(suggestion);
+    } else {
+      onCommit?.();
+    }
     inputRef.current?.focus();
   }
 
@@ -75,7 +81,12 @@ export function FilterAutocompleteInput({
     window.setTimeout(() => {
       if (!rootRef.current?.contains(document.activeElement)) {
         setOpen(false);
-        onCommit?.();
+        const nextValue = inputRef.current?.value ?? value;
+        if (onCommitValue) {
+          onCommitValue(nextValue);
+        } else {
+          onCommit?.();
+        }
       }
     }, 0);
   }

@@ -334,26 +334,28 @@ export function DocumentsPage() {
     updateDocumentMutation.mutate({ id: selected.id, body: { proposed_name: editName } });
   }
 
-  function saveFolder() {
+  function saveFolder(nextFolder?: string) {
     if (!selected) return;
 
-    const destFolder = editFolder.trim();
+    const destFolder = (nextFolder ?? editFolder).trim();
     if (!destFolder) return;
 
     const current = documentFolder(selected);
     if (destFolder === current) return;
 
-    const destKey = destFolder.toLocaleLowerCase("ca");
-    const isExistingFolder = existingFolderSuggestions.some(
-      (folder) => folder.toLocaleLowerCase("ca") === destKey,
-    );
-    if (!isExistingFolder) {
-      const ok = window.confirm(
-        `Aquesta carpeta no existeix a la llista.\n\nVoleu crear-la i moure el document a: "${destFolder}"?`,
+    if (existingFolderSuggestions.length > 0) {
+      const destKey = destFolder.toLocaleLowerCase("ca");
+      const isExistingFolder = existingFolderSuggestions.some(
+        (folder) => folder.toLocaleLowerCase("ca") === destKey,
       );
-      if (!ok) {
-        setEditFolder(current);
-        return;
+      if (!isExistingFolder) {
+        const ok = window.confirm(
+          `Aquesta carpeta no existeix a la llista.\n\nVoleu crear-la i moure el document a: "${destFolder}"?`,
+        );
+        if (!ok) {
+          setEditFolder(current);
+          return;
+        }
       }
     }
 
@@ -596,7 +598,7 @@ export function DocumentsPage() {
                 suggestions={folderSuggestions}
                 onChange={setEditFolder}
                 disabled={isSaving}
-                onCommit={saveFolder}
+                onCommitValue={(value) => saveFolder(value)}
                 maxSuggestions={0}
               />
               <div className="field">
