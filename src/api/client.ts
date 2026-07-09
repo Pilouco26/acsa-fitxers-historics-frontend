@@ -30,11 +30,9 @@ import type {
   UploadOut,
 } from "./types";
 import toast from "react-hot-toast";
+import { getApiBaseUrl, getApiKey } from "@/config";
 
-const BASE =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "/api";
-
-const API_KEY = import.meta.env.VITE_API_KEY?.trim() || "";
+const BASE = getApiBaseUrl();
 
 export class ApiError extends Error {
   constructor(
@@ -53,13 +51,14 @@ export function isUnauthorizedError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 401;
 }
 
-function buildHeaders(extra?: HeadersInit): HeadersInit {
+export function buildHeaders(extra?: HeadersInit): HeadersInit {
   const headers: Record<string, string> = {
     Accept: "application/json",
     ...(extra as Record<string, string>),
   };
-  if (API_KEY) {
-    headers["X-API-Key"] = API_KEY;
+  const apiKey = getApiKey();
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
   }
   return headers;
 }
@@ -141,7 +140,7 @@ export async function uploadFile(file: File): Promise<UploadOut> {
     form.append("file", file);
     const res = await fetch(`${BASE}/files/upload`, {
       method: "POST",
-      headers: API_KEY ? { "X-API-Key": API_KEY } : undefined,
+      headers: buildHeaders(),
       body: form,
     });
     if (!res.ok) throw new ApiError(res.status, await parseError(res));
@@ -171,7 +170,7 @@ export async function uploadBatch(files: File[]): Promise<BatchUploadOut> {
     }
     const res = await fetch(`${BASE}/files/upload/batch`, {
       method: "POST",
-      headers: API_KEY ? { "X-API-Key": API_KEY } : undefined,
+      headers: buildHeaders(),
       body: form,
     });
     if (!res.ok) throw new ApiError(res.status, await parseError(res));
@@ -321,7 +320,7 @@ export async function compareFile(file: File): Promise<CompareResponse> {
     form.append("file", file);
     const res = await fetch(`${BASE}/compare/scan`, {
       method: "POST",
-      headers: API_KEY ? { "X-API-Key": API_KEY } : undefined,
+      headers: buildHeaders(),
       body: form,
     });
     if (!res.ok) throw new ApiError(res.status, await parseError(res));

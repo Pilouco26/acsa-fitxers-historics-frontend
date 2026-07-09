@@ -1,7 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { documentFileUrl } from "@/api/client";
-
-const API_KEY = import.meta.env.VITE_API_KEY?.trim() || "";
+import { buildHeaders, documentFileUrl } from "@/api/client";
 
 const activeReleases = new Map<number, () => void>();
 
@@ -67,10 +65,10 @@ export function PdfPreview({
     setError(null);
     setObjectUrl(null);
 
-    const headers: HeadersInit = {};
-    if (API_KEY) headers["X-API-Key"] = API_KEY;
-
-    fetch(documentFileUrl(documentId), { headers, signal: ac.signal })
+    fetch(documentFileUrl(documentId), {
+      headers: buildHeaders(),
+      signal: ac.signal,
+    })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.arrayBuffer();
