@@ -15,6 +15,7 @@ import {
 import { DOCUMENT_LANGUAGE_OPTIONS } from "@/constants/documentFilters";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDocumentFilterOptions } from "@/hooks/useDocumentFilterOptions";
+import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
 import type { DocumentOrderBy, DocumentOut } from "@/api/types";
 import { fetchAllDocuments } from "@/utils/fetchAllDocuments";
 import { hasDocumentListFilters } from "@/utils/documentListTotal";
@@ -224,6 +225,33 @@ export function DocumentsPage() {
   const total = data?.total ?? 0;
   const totalReady = !isFetching;
   const totalPending = isFetching && items.length > 0;
+
+  usePrefetchDocumentListPages({
+    enabled: !hasActiveFilters,
+    page,
+    pageSize,
+    total,
+    scopeKey: `${orderBy ?? ""}:${orderDir}`,
+    getPageOptions: (targetPage) => ({
+      queryKey: [
+        "documents",
+        DOCUMENT_STATUS_OK,
+        "server-page",
+        orderBy,
+        orderDir,
+        targetPage,
+        pageSize,
+      ],
+      queryFn: () =>
+        listDocuments({
+          status: DOCUMENT_STATUS_OK,
+          order_by: orderBy ?? undefined,
+          order: orderBy ? orderDir : undefined,
+          limit: pageSize,
+          offset: targetPage * pageSize,
+        }),
+    }),
+  });
 
   useEffect(() => {
     // Keep rows-per-page responsive without introducing scrollbars.

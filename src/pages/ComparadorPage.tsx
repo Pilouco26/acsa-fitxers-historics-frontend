@@ -8,7 +8,7 @@ import type { CompareResponse } from "@/api/types";
 
 const VERDICT_LABELS: Record<string, string> = {
   duplicate: "Duplicat",
-  similar: "Similar",
+  similar: "Semblant",
   none: "Cap coincidència",
 };
 
@@ -17,16 +17,20 @@ function formatTrust(trust: number | null | undefined): string {
   return `${Math.round(trust * 100)}%`;
 }
 
+function verdictInCatalan(verdict: string): string {
+  return VERDICT_LABELS[verdict.toLowerCase()] ?? verdict;
+}
+
 function CompareResult({ result }: { result: CompareResponse }) {
-  const verdictLabel = VERDICT_LABELS[result.verdict] ?? result.verdict;
+  const verdictLabel = verdictInCatalan(result.verdict);
 
   return (
     <div className="card">
-      <h3 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>Resultat</h3>
+      <h3 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>Veredicte</h3>
 
       <div className="compare-stats">
         <span>
-          <strong>Veredicte:</strong> {verdictLabel}
+          <strong>Resultat:</strong> {verdictLabel}
         </span>
         {result.trust != null && (
           <span>
@@ -202,7 +206,7 @@ export function ComparadorPage() {
 
       {result && (
         <>
-          {result.verdict === "duplicate" ? (
+          {result.verdict.toLowerCase() === "duplicate" ? (
             <div className="card" style={{ marginTop: "1rem" }}>
               <h3 className="card-title">Duplicat</h3>
               <p style={{ margin: "0 0 1rem" }}>

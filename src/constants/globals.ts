@@ -2,6 +2,8 @@
 
 export const DOCUMENT_LIST_MIN_PAGE_SIZE = 8;
 export const DOCUMENT_LIST_MAX_PAGE_SIZE = 25;
+/** Sliding window of list pages kept warm (current + ahead). */
+export const DOCUMENT_LIST_PREFETCH_PAGES = 5;
 
 export const SEARCH_DEBOUNCE_MS = 300;
 

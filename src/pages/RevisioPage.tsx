@@ -19,6 +19,7 @@ import {
   LIST_PANEL_ROW_HEIGHT_PX,
 } from "@/constants/globals";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
 import type { DocumentOut } from "@/api/types";
 
 export function RevisioPage() {
@@ -59,6 +60,30 @@ export function RevisioPage() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+
+  usePrefetchDocumentListPages({
+    enabled: true,
+    page,
+    pageSize,
+    total,
+    scopeKey: debouncedSearch,
+    getPageOptions: (targetPage) => ({
+      queryKey: [
+        "documents",
+        DOCUMENT_STATUS_REVISIO,
+        debouncedSearch,
+        targetPage,
+        pageSize,
+      ],
+      queryFn: () =>
+        listDocuments({
+          status: DOCUMENT_STATUS_REVISIO,
+          q: debouncedSearch || undefined,
+          limit: pageSize,
+          offset: targetPage * pageSize,
+        }),
+    }),
+  });
 
   useEffect(() => {
     // Keep rows-per-page responsive without introducing scrollbars.

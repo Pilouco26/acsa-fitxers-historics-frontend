@@ -222,9 +222,19 @@ select {
   overflow-y: auto;
 }
 
-.main-content > .page-fill {
+.main-content > .page-fill,
+.main-content > .keep-alive-page > .page-fill {
   flex: 1;
   min-height: 0;
+}
+
+/* Keep visited tabs mounted; active uses display:contents so layout matches Routes */
+.keep-alive-page {
+  display: none;
+}
+
+.keep-alive-page--active {
+  display: contents;
 }
 
 .page-fill {
