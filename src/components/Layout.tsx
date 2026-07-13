@@ -2,6 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { MoreNavMenu } from "@/components/MoreNavMenu";
 import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
+import logoAcsa from "../../images/Logo_ACSA_02.png";
 
 const mainNav = [
   { to: "/upload", label: "Escàner" },
@@ -56,7 +57,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <h1>ACSA</h1>
+          <img src={logoAcsa} alt="ACSA" className="sidebar-brand-logo" />
           <p>Fitxers històrics</p>
         </div>
         <nav className="sidebar-nav">

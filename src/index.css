@@ -93,11 +93,10 @@ select {
   border-bottom: 1px solid var(--color-border-light);
 }
 
-.sidebar-brand h1 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+.sidebar-brand-logo {
+  display: block;
+  height: 2.5rem;
+  width: auto;
 }
 
 .sidebar-brand p {

@@ -188,7 +188,8 @@ export function RevisioPage() {
     .filter(Boolean)
     .join(" ");
 
-  const emptyRows = Math.max(0, pageSize - items.length);
+  // Fill remaining slots only when there are results; empty list keeps header + overlay only.
+  const emptyRows = items.length === 0 ? 0 : Math.max(0, pageSize - items.length);
 
   const tableOverlayMessage =
     isLoading || (isFetching && items.length === 0)

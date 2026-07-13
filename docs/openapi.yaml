@@ -1,0 +1,383 @@
+openapi: 3.1.0
+info:
+  title: ACSA API (consumida pel frontend)
+  description: |
+    Especificació inferida des de `src/api/client.ts` i `src/api/types.ts`.
+    El backend real resideix fora d'aquest repositori (projecte Automatització/backend).
+    Elements marcats com a inferits poden diferir lleugerament de la implementació del servidor.
+  version: 0.1.0
+  contact:
+    name: ACSA — Fitxers històrics
+
+servers:
+  - url: /api
+    description: Ruta relativa en producció (nginx proxy)
+  - url: http://localhost:8000
+    description: Backend directe en desenvolupament
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    ApiEnvelope:
+      type: object
+      properties:
+        status: { type: string }
+        message: { type: string }
+        data: {}
+
+    DocumentOut:
+      type: object
+      properties:
+        id: { type: integer }
+        status: { type: string, nullable: true }
+        proposed_name: { type: string, nullable: true }
+        original_name: { type: string, nullable: true }
+        company: { type: string, nullable: true }
+        company_folder: { type: string, nullable: true }
+        doc_type: { type: string, nullable: true }
+        doc_type_ca: { type: string, nullable: true }
+        final_date: { type: string, nullable: true }
+        overall_conf: { type: string, nullable: true }
+        summary: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        folder: { type: string, nullable: true }
+        target_folder: { type: string, nullable: true }
+        language: { type: string, nullable: true }
+        sender: { type: string, nullable: true }
+        recipient: { type: string, nullable: true }
+        processed_at: { type: string, format: date-time, nullable: true }
+        duplicate: { type: boolean }
+        compare: { $ref: '#/components/schemas/CompareResponse' }
+
+    DocumentListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DocumentOut' }
+        total: { type: integer }
+
+    DocumentUpdate:
+      type: object
+      properties:
+        proposed_name: { type: string, nullable: true }
+        summary: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        target_folder: { type: string, nullable: true }
+        approve: { type: boolean }
+
+    DocumentMoveRequest:
+      type: object
+      required: [dest_folder]
+      properties:
+        dest_folder: { type: string, nullable: true }
+        dest_name: { type: string, nullable: true }
+        dry_run: { type: boolean, default: false }
+
+    AnalyzeJobRequest:
+      type: object
+      properties:
+        source: { type: string, default: inbox }
+        dest: { type: string }
+        folder: { type: string, nullable: true }
+        limit: { type: integer, nullable: true }
+        folder_limit: { type: integer, nullable: true }
+        folder_start: { type: integer, nullable: true }
+        folder_end: { type: integer, nullable: true }
+        folder_from: { type: string, nullable: true }
+        folder_to: { type: string, nullable: true }
+        force: { type: boolean }
+        dry_run: { type: boolean }
+        require_review: { type: boolean }
+        run_assign: { type: boolean }
+
+    JobOut:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        started_at: { type: string, format: date-time, nullable: true }
+        elapsed_seconds: { type: number, nullable: true }
+        eta_seconds: { type: number, nullable: true }
+        progress:
+          type: object
+          properties:
+            processed: { type: integer }
+            total: { type: integer }
+            current_file: { type: string, nullable: true }
+            status_counts: { type: object, additionalProperties: { type: integer } }
+            message: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        result: { type: object, nullable: true }
+
+    SettingsOut:
+      type: object
+      properties:
+        input_folder: { type: string }
+        output_folder: { type: string }
+        gemini_api_key: { type: string }
+        gemini_api_key_backup: { type: string }
+        gemini_model: { type: string }
+        gemini_configured: { type: boolean }
+
+    CompareResponse:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum: [duplicate, similar, none]
+        candidates_scanned: { type: integer }
+        bytes_compared: { type: integer }
+        text_compared: { type: integer }
+        trust: { type: number, nullable: true }
+        best_match: { type: object, nullable: true }
+        alternatives: { type: array, items: { type: object } }
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          oneOf:
+            - { type: string }
+            - type: array
+              items:
+                type: object
+                properties:
+                  msg: { type: string }
+
+paths:
+  /health:
+    get:
+      summary: Estat del servei
+      security: []
+      responses:
+        '200':
+          description: Servei operatiu
+
+  /files/upload:
+    post:
+      summary: Puja un PDF
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200': { description: Fitxer pujat }
+
+  /files/upload/batch:
+    post:
+      summary: Puja múltiples PDF
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200': { description: Fitxers pujats }
+
+  /documents:
+    get:
+      summary: Llista documents
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: folder, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: proposed_name, in: query, schema: { type: string } }
+        - { name: original_name, in: query, schema: { type: string } }
+        - { name: company_folder, in: query, schema: { type: string } }
+        - { name: doc_type_ca, in: query, schema: { type: string } }
+        - { name: final_date, in: query, schema: { type: string } }
+        - { name: language, in: query, schema: { type: string } }
+        - { name: order_by, in: query, schema: { type: string, enum: [proposed_name, company_folder] } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Llista paginada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentListResponse' }
+
+  /documents/{id}:
+    get:
+      summary: Obté un document
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Document }
+    patch:
+      summary: Actualitza metadades o aprova
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentUpdate' }
+      responses:
+        '200': { description: Document actualitzat }
+    delete:
+      summary: Elimina un document
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Eliminat }
+
+  /documents/{id}/file:
+    get:
+      summary: Descarrega el PDF del document
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Contingut PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /documents/{id}/move:
+    post:
+      summary: Mou un document a una altra carpeta
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentMoveRequest' }
+      responses:
+        '200': { description: Document mogut }
+
+  /jobs/analyze:
+    post:
+      summary: Inicia treball d'anàlisi IA
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalyzeJobRequest' }
+      responses:
+        '200': { description: Treball creat }
+
+  /jobs/{jobId}:
+    get:
+      summary: Estat del treball
+      parameters:
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobOut' }
+    delete:
+      summary: Cancel·la el treball
+      parameters:
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Treball cancel·lat }
+
+  /assign:
+    post:
+      summary: Assigna documents de safata a arxiu
+      responses:
+        '200': { description: Resum d'assignació }
+
+  /settings:
+    get:
+      summary: Llegeix configuració
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsOut' }
+    put:
+      summary: Actualitza configuració
+      responses:
+        '200': { description: Configuració actualitzada }
+
+  /compare/scan:
+    post:
+      summary: Compara un PDF amb l'arxiu
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompareResponse' }
+
+  /apply:
+    post:
+      summary: Aplica canvis de nom al sistema de fitxers
+      responses:
+        '200': { description: Canvis aplicats }
+
+  /revert:
+    post:
+      summary: Reverteix l'última aplicació de canvis
+      responses:
+        '200': { description: Revertit }
+
+  /folders:
+    get:
+      summary: Llista carpetes de l'arxiu
+      parameters:
+        - { name: folder, in: query, schema: { type: string } }
+        - { name: root, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Llista de carpetes }
+
+  /emails:
+    get:
+      summary: Llista correus processats
+      responses:
+        '200': { description: Llista de correus }
+
+  /emails/{id}:
+    get:
+      summary: Obté un correu
+      patch:
+        summary: Actualitza un correu
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+
+  /emails/{id}/file:
+    get:
+      summary: Descarrega el fitxer del correu
+
+  /emails/assign:
+    post:
+      summary: Assigna correus processats
+
+  /jobs/email-analyze:
+    post:
+      summary: Inicia anàlisi de correus
