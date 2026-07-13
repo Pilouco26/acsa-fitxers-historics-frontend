@@ -535,6 +535,10 @@ select {
 
 .table-list-body .data-table--list tbody td {
   vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
 }
 
 .table-list-overlay {
@@ -999,6 +1003,10 @@ select {
   grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.split-view--detail-open.split-view--compare {
+  grid-template-columns: auto minmax(16rem, 0.75fr) minmax(0, 1.5fr);
+}
+
 /* List mode for paginated tables: size to content instead of stretching
    to fill the viewport, so the table never needs an inner scrollbar and
    the pagination bar always sits right below the last row. */
@@ -1019,6 +1027,30 @@ select {
 .split-detail-preview > .pdf-preview-frame {
   flex: 1;
   min-height: 0;
+}
+
+.split-detail-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.split-detail-compare-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.split-detail-compare-pane > .pdf-preview-frame {
+  flex: 1;
+  min-height: 0;
+}
+
+.revisio-duplicate-banner {
+  margin-top: 0.75rem;
 }
 
 .split-detail-summary {
@@ -1183,6 +1215,15 @@ select {
 
   .split-view--detail-open .split-detail-preview {
     order: 3;
+  }
+
+  .split-detail-compare {
+    grid-template-columns: 1fr;
+    min-height: 70vh;
+  }
+
+  .split-detail-compare-pane {
+    min-height: 35vh;
   }
 
   .split-detail-toggle {

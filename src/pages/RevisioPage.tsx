@@ -4,6 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import {
   ApiError,
   deleteDocument,
+  getDocument,
   listDocuments,
   updateDocument,
 } from "@/api/client";
@@ -22,6 +23,19 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
 import type { DocumentOut } from "@/api/types";
 
+function isRepeatedDocument(doc: DocumentOut): boolean {
+  return (
+    doc.status === "repeated" ||
+    doc.duplicate === true ||
+    doc.compare?.verdict?.toLowerCase() === "duplicate"
+  );
+}
+
+function formatTrust(trust: number | null | undefined): string {
+  if (trust == null) return "—";
+  return `${Math.round(trust * 100)}%`;
+}
+
 export function RevisioPage() {
   const queryClient = useQueryClient();
 
@@ -35,6 +49,8 @@ export function RevisioPage() {
   const [editName, setEditName] = useState("");
   const [editSummary, setEditSummary] = useState("");
   const [previewRotation, setPreviewRotation] = useState(0);
+  const [originalRotation, setOriginalRotation] = useState(0);
+  const [compareOriginal, setCompareOriginal] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const listCardRef = useRef<HTMLDivElement>(null);
@@ -45,6 +61,7 @@ export function RevisioPage() {
   }, [debouncedSearch]);
 
   const detailVisible = Boolean(selected && detailOpen);
+  const selectedIsRepeated = Boolean(selected && isRepeatedDocument(selected));
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["documents", DOCUMENT_STATUS_REVISIO, debouncedSearch, page, pageSize],
@@ -58,8 +75,29 @@ export function RevisioPage() {
     placeholderData: keepPreviousData,
   });
 
+  // List payloads may omit compare; hydrate so we can open the matched original.
+  const repeatedDetailQuery = useQuery({
+    queryKey: ["documents", "detail", selected?.id],
+    queryFn: () => getDocument(selected!.id),
+    enabled: Boolean(
+      selected &&
+        detailOpen &&
+        selectedIsRepeated &&
+        selected.compare?.best_match?.document_id == null,
+    ),
+  });
+
+  useEffect(() => {
+    const full = repeatedDetailQuery.data;
+    if (!full) return;
+    setSelected((prev) => (prev?.id === full.id ? { ...prev, ...full } : prev));
+  }, [repeatedDetailQuery.data]);
+
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const originalMatch = selected?.compare?.best_match ?? null;
+  const originalDocumentId = originalMatch?.document_id ?? null;
+  const showOriginalCompare = compareOriginal && originalDocumentId != null;
 
   usePrefetchDocumentListPages({
     enabled: true,
@@ -166,36 +204,55 @@ export function RevisioPage() {
     setEditName(doc.proposed_name ?? "");
     setEditSummary(doc.summary ?? "");
     setDetailOpen(true);
+    setCompareOriginal(false);
+    setOriginalRotation(0);
     setError(null);
   }
 
   useEffect(() => {
     setPreviewRotation(0);
+    setOriginalRotation(0);
+    setCompareOriginal(false);
   }, [selected?.id]);
 
   function rotatePreview() {
     setPreviewRotation((deg) => (deg + 90) % 360);
   }
 
-  async function forceCloseDocumentPreview(documentId: number): Promise<void> {
+  function rotateOriginalPreview() {
+    setOriginalRotation((deg) => (deg + 90) % 360);
+  }
+
+  async function forceCloseDocumentPreview(
+    documentId: number,
+    alsoDocumentId?: number | null,
+  ): Promise<void> {
     // Abort fetch, blank iframe, and revoke blob URL before React unmounts.
     await releaseDocumentPreview(documentId);
+    if (alsoDocumentId != null && alsoDocumentId !== documentId) {
+      await releaseDocumentPreview(alsoDocumentId);
+    }
 
     flushSync(() => {
       setDetailOpen(false);
       setSelected(null);
       setPreviewRotation(0);
+      setOriginalRotation(0);
+      setCompareOriginal(false);
     });
 
     // Catch any preview still registered after unmount (useLayoutEffect cleanup).
     await releaseDocumentPreview(documentId);
+    if (alsoDocumentId != null && alsoDocumentId !== documentId) {
+      await releaseDocumentPreview(alsoDocumentId);
+    }
   }
 
   async function handleDelete(doc: DocumentOut) {
     setError(null);
 
     try {
-      await forceCloseDocumentPreview(doc.id);
+      await forceCloseDocumentPreview(doc.id, originalDocumentId);
       await deleteMutation.mutateAsync(doc.id);
     } catch (err) {
       if (!(err instanceof ApiError)) {
@@ -209,12 +266,12 @@ export function RevisioPage() {
     !detailVisible && "split-view--auto",
     !detailVisible && "split-view--collapsed",
     detailVisible && "split-view--detail-open",
+    showOriginalCompare && "split-view--compare",
   ]
     .filter(Boolean)
     .join(" ");
 
-  // Fill remaining slots only when there are results; empty list keeps header + overlay only.
-  const emptyRows = items.length === 0 ? 0 : Math.max(0, pageSize - items.length);
+  const emptyRows = Math.max(0, pageSize - items.length);
 
   const tableOverlayMessage =
     isLoading || (isFetching && items.length === 0)
@@ -283,7 +340,7 @@ export function RevisioPage() {
                       key={doc.id}
                       className={[
                         selected?.id === doc.id && "selected",
-                        doc.status === "repeated" && "data-table-row--repeated",
+                        isRepeatedDocument(doc) && "data-table-row--repeated",
                       ]
                         .filter(Boolean)
                         .join(" ")}
@@ -362,7 +419,39 @@ export function RevisioPage() {
                 />
               </div>
 
-              {selected.error && <div className="alert alert-error">{selected.error}</div>}
+              {selectedIsRepeated && (
+                <div className="alert alert-info revisio-duplicate-banner">
+                  <p style={{ margin: 0 }}>
+                    Possible duplicat
+                    {originalMatch?.relative_path
+                      ? `: ${originalMatch.relative_path}`
+                      : ""}
+                    {originalMatch?.trust != null
+                      ? ` (confiança ${formatTrust(originalMatch.trust)})`
+                      : ""}
+                    .
+                  </p>
+                  {repeatedDetailQuery.isFetching && originalDocumentId == null ? (
+                    <p style={{ margin: "0.5rem 0 0" }}>Cercant document original…</p>
+                  ) : originalDocumentId != null ? (
+                    <div className="toolbar-row" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setCompareOriginal((open) => !open)}
+                      >
+                        {showOriginalCompare
+                          ? "Tancar comparació"
+                          : "Comparar amb l'original"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p style={{ margin: "0.5rem 0 0" }}>
+                      No s'ha trobat l'identificador del document original.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="btn-row">
                 <button
@@ -383,27 +472,76 @@ export function RevisioPage() {
             </div>
 
             <div className="card card-panel split-detail-preview">
-              <div className="toolbar-row" style={{ marginBottom: 0 }}>
-                <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
-                  Vista prèvia
-                </h3>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={rotatePreview}
-                  title="Rotar 90°"
-                >
-                  Rotar
-                </button>
-              </div>
+              {showOriginalCompare && originalDocumentId != null ? (
+                <div className="split-detail-compare">
+                  <div className="split-detail-compare-pane">
+                    <div className="toolbar-row" style={{ marginBottom: 0 }}>
+                      <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
+                        Aquest document
+                      </h3>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={rotatePreview}
+                        title="Rotar 90°"
+                      >
+                        Rotar
+                      </button>
+                    </div>
+                    <PdfPreview
+                      key={`current-${selected.id}`}
+                      documentId={selected.id}
+                      title={selected.proposed_name ?? selected.original_name ?? "PDF"}
+                      rotation={previewRotation}
+                    />
+                  </div>
+                  <div className="split-detail-compare-pane">
+                    <div className="toolbar-row" style={{ marginBottom: 0 }}>
+                      <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
+                        Original
+                      </h3>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={rotateOriginalPreview}
+                        title="Rotar 90°"
+                      >
+                        Rotar
+                      </button>
+                    </div>
+                    <PdfPreview
+                      key={`original-${originalDocumentId}`}
+                      documentId={originalDocumentId}
+                      title={originalMatch?.relative_path ?? "Original"}
+                      rotation={originalRotation}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="toolbar-row" style={{ marginBottom: 0 }}>
+                    <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
+                      Vista prèvia
+                    </h3>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={rotatePreview}
+                      title="Rotar 90°"
+                    >
+                      Rotar
+                    </button>
+                  </div>
 
-              <PdfPreview
-                // Key ensures iframe/object URL is fully disposed when we clear selection.
-                key={selected.id}
-                documentId={selected.id}
-                title={selected.proposed_name ?? selected.original_name ?? "PDF"}
-                rotation={previewRotation}
-              />
+                  <PdfPreview
+                    // Key ensures iframe/object URL is fully disposed when we clear selection.
+                    key={selected.id}
+                    documentId={selected.id}
+                    title={selected.proposed_name ?? selected.original_name ?? "PDF"}
+                    rotation={previewRotation}
+                  />
+                </>
+              )}
             </div>
           </>
         )}
