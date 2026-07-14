@@ -1,7 +1,7 @@
 /** Shared layout, timing, and document-status constants. */
 
-export const DOCUMENT_LIST_MIN_PAGE_SIZE = 8;
-export const DOCUMENT_LIST_MAX_PAGE_SIZE = 25;
+/** Fixed rows per page for document list tables. */
+export const DOCUMENT_LIST_PAGE_SIZE = 12;
 /** Sliding window of list pages kept warm (current + ahead). */
 export const DOCUMENT_LIST_PREFETCH_PAGES = 5;
 

@@ -1,41 +1,29 @@
-# ACSA — Guia pas a pas del flux principal
+# ACSA — Fitxers històrics
 
-Seguiu aquests **4 passos en ordre** al menú lateral **«Flux principal»**.
+**Guia pas a pas del flux principal**
 
----
-
-## Pas 1 — Escàner
-
-1. Escanegeu i deseu el document com a PDF.
-2. Pugeu el fitxer a la pestanya Escàner.
-
-**→ Següent:** Classificador
+```
+Escàner → Classificador → Revisió → Documents
+```
 
 ---
 
-## Pas 2 — Classificador
+## 1. Escàner · Pujar
+- Escanegeu en PDF
+- Pugeu a la pestanya Escàner
 
-1. Premeu **Processar documents**.
-2. Espereu fins que acabi el procés.
+## 2. Classificador · Processar
+- Premeu «Processar documents»
+- Espereu que acabi
 
-**→ Següent:** Revisió
+## 3. Revisió · Validar
+- Reviseu PDF, nom i resum
+- Aproveu o elimineu
 
----
-
-## Pas 3 — Revisió
-
-1. Reviseu el PDF, el nom i el resum.
-2. Premeu **Aprovar** o **Eliminar**.
-
-**→ Següent:** Documents
-
----
-
-## Pas 4 — Documents
-
-1. Consulteu els documents ja aprovats.
-2. Cerqueu, filtreu i obriu qualsevol fitxer.
+## 4. Documents · Consultar
+- Cerqueu i filtreu
+- Obriu qualsevol fitxer
 
 ---
 
-*Només PDF · Sense fitxers nous → Pas 1 · Revisió buida → espereu el Pas 2*
+**Consells ràpids:** Només PDF · Sense fitxers nous → Pas 1 · Revisió buida → espereu el Pas 2

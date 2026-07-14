@@ -1,12 +1,10 @@
 import {
-  DOCUMENT_LIST_MAX_PAGE_SIZE,
-  DOCUMENT_LIST_MIN_PAGE_SIZE,
+  DOCUMENT_LIST_PAGE_SIZE,
   LIST_PANEL_ROW_HEIGHT_PX,
 } from "@/constants/globals";
 
-/** Allowed row heights when fitting table area (px). */
+/** Floor for row height when the panel is short (px). */
 export const LIST_PANEL_ROW_HEIGHT_MIN_PX = 34;
-export const LIST_PANEL_ROW_HEIGHT_MAX_PX = 48;
 
 export type ListPanelFit = {
   /** Exact table area height: (pageSize + 1) * rowHeight */
@@ -37,72 +35,21 @@ export function measureListPanelChrome(
 }
 
 /**
- * Pick integer rowHeight + pageSize so tableHeight % rowHeight === 0
- * (header counts as one row). Prefers little shrink from available height,
- * then rowHeight near the preferred size, then more visible rows.
+ * Fit a fixed pageSize into the available height by growing row height so the
+ * table keeps the same overall panel size (no extra empty strip, no scroll).
  */
 export function fitListPanelLayout(availableHeight: number): ListPanelFit {
-  const available = Math.max(
-    0,
-    Math.floor(availableHeight),
+  const available = Math.max(0, Math.floor(availableHeight));
+  const pageSize = DOCUMENT_LIST_PAGE_SIZE;
+  const totalRows = pageSize + 1; // header + data rows
+
+  const rowHeight = Math.max(
+    LIST_PANEL_ROW_HEIGHT_MIN_PX,
+    Math.floor(available / totalRows) || LIST_PANEL_ROW_HEIGHT_PX,
   );
-  const minTotalRows = DOCUMENT_LIST_MIN_PAGE_SIZE + 1;
-  const maxTotalRows = DOCUMENT_LIST_MAX_PAGE_SIZE + 1;
-  const maxShrink = LIST_PANEL_ROW_HEIGHT_MAX_PX;
+  const height = rowHeight * totalRows;
 
-  let best: (ListPanelFit & { score: number }) | null = null;
-
-  for (let shrink = 0; shrink <= maxShrink; shrink++) {
-    const height = available - shrink;
-    if (height < minTotalRows * LIST_PANEL_ROW_HEIGHT_MIN_PX) break;
-
-    for (
-      let rowHeight = LIST_PANEL_ROW_HEIGHT_MIN_PX;
-      rowHeight <= LIST_PANEL_ROW_HEIGHT_MAX_PX;
-      rowHeight++
-    ) {
-      if (height % rowHeight !== 0) continue;
-
-      const totalRows = height / rowHeight;
-      if (totalRows < minTotalRows || totalRows > maxTotalRows) continue;
-
-      const pageSize = totalRows - 1;
-      const score =
-        shrink * 1_000 +
-        Math.abs(rowHeight - LIST_PANEL_ROW_HEIGHT_PX) * 10 -
-        pageSize;
-
-      if (!best || score < best.score) {
-        best = { height, rowHeight, pageSize, score };
-      }
-    }
-
-    // Exact fit with no/little shrink is enough once found at this shrink.
-    if (best && best.score < 1_000) break;
-  }
-
-  if (best) {
-    return {
-      height: best.height,
-      rowHeight: best.rowHeight,
-      pageSize: best.pageSize,
-    };
-  }
-
-  // Fallback: classic floor fit (may leave a tiny unused strip if clamps hit).
-  const rowHeight = LIST_PANEL_ROW_HEIGHT_PX;
-  const pageSize = Math.max(
-    DOCUMENT_LIST_MIN_PAGE_SIZE,
-    Math.min(
-      DOCUMENT_LIST_MAX_PAGE_SIZE,
-      Math.floor(available / rowHeight) - 1,
-    ),
-  );
-  return {
-    height: rowHeight * (pageSize + 1),
-    rowHeight,
-    pageSize,
-  };
+  return { height, rowHeight, pageSize };
 }
 
 /** Apply a fitted layout onto the table area element. */

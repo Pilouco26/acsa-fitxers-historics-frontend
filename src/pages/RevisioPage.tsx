@@ -16,7 +16,7 @@ import {
 } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import {
-  DOCUMENT_LIST_MIN_PAGE_SIZE,
+  DOCUMENT_LIST_PAGE_SIZE,
   DOCUMENT_STATUS_OK,
   DOCUMENT_STATUS_REVISIO,
 } from "@/constants/globals";
@@ -52,7 +52,7 @@ export function RevisioPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(DOCUMENT_LIST_MIN_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(DOCUMENT_LIST_PAGE_SIZE);
 
   const [selected, setSelected] = useState<DocumentOut | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
