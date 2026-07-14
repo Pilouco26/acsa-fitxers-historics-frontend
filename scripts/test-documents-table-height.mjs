@@ -1,7 +1,6 @@
 import { chromium } from "playwright";
 
 const BASE_URL = "http://localhost:5173";
-const ROW_HEIGHT = 36;
 
 function makeDoc(id) {
   return {
@@ -34,21 +33,38 @@ function mockDocuments(items, total) {
 }
 
 async function readTableMetrics(page) {
-  return page.evaluate((rowHeight) => {
+  return page.evaluate(() => {
     const tableArea = document.querySelector(".table-list-body");
-    const tbodyRows = document.querySelectorAll(".table-list-body tbody tr");
+    const tbodyRows = [...document.querySelectorAll(".table-list-body tbody tr")];
+    const theadRow = document.querySelector(".table-list-body thead tr");
     const overlay = document.querySelector(".table-list-overlay");
     const pagination = document.querySelector(".table-pagination");
+    const last = tbodyRows[tbodyRows.length - 1]?.getBoundingClientRect();
+    const areaRect = tableArea?.getBoundingClientRect();
+    const rowHeights = tbodyRows.map((r) => +r.getBoundingClientRect().height.toFixed(2));
+    const firstH = rowHeights[0] ?? 0;
+    const maxDelta = Math.max(...rowHeights.map((h) => Math.abs(h - firstH)), 0);
+    const theadH = theadRow?.getBoundingClientRect().height ?? 0;
+    const areaH = Math.round(areaRect?.height ?? 0);
+    const rowH = Math.round(firstH);
 
     return {
-      tableAreaHeight: tableArea?.getBoundingClientRect().height ?? 0,
+      tableAreaHeight: areaRect?.height ?? 0,
       rowCount: tbodyRows.length,
+      rowHeights,
+      theadHeight: theadH,
+      maxRowHeightDelta: maxDelta,
+      heightModRow: rowH > 0 ? areaH % rowH : -1,
+      gapLastRowToArea: areaRect && last ? areaRect.bottom - last.bottom : null,
+      overflowY: tableArea
+        ? tableArea.scrollHeight - tableArea.clientHeight
+        : null,
       hasOverlay: Boolean(overlay),
       overlayText: overlay?.textContent?.trim() ?? "",
       hasPagination: Boolean(pagination),
       paginationText: pagination?.textContent?.replace(/\s+/g, " ").trim() ?? "",
     };
-  }, ROW_HEIGHT);
+  });
 }
 
 async function waitForStableTable(page) {
@@ -70,18 +86,25 @@ async function waitForStableTable(page) {
 }
 
 async function main() {
-  const browser = await chromium.launch({ channel: "msedge", headless: true });
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
   let currentMode = "full";
 
   await page.route("**/api/documents**", async (route) => {
+    const url = new URL(route.request().url());
     if (currentMode === "full") {
-      const items = Array.from({ length: 12 }, (_, i) => makeDoc(i + 1));
+      const limit = Number(url.searchParams.get("limit") || 12);
+      const offset = Number(url.searchParams.get("offset") || 0);
+      const total = 40;
+      const items = Array.from(
+        { length: Math.min(limit, Math.max(0, total - offset)) },
+        (_, i) => makeDoc(offset + i + 1),
+      );
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(mockDocuments(items, items.length)),
+        body: JSON.stringify(mockDocuments(items, total)),
       });
       return;
     }
@@ -90,6 +113,14 @@ async function main() {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(mockDocuments([], 0)),
+    });
+  });
+
+  await page.route("**/api/folders**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "ok", data: { items: [], total: 0 } }),
     });
   });
 
@@ -148,6 +179,34 @@ async function main() {
   if (heightDelta > 1) {
     throw new Error(
       `Table area height changed by ${heightDelta}px: with data=${withData.tableAreaHeight}, empty=${empty.tableAreaHeight}`,
+    );
+  }
+
+  if (Math.abs(withData.gapLastRowToArea ?? 99) > 1.5) {
+    throw new Error(
+      `Bottom gap too large with data: ${withData.gapLastRowToArea}px`,
+    );
+  }
+
+  if ((withData.overflowY ?? 99) > 1.5) {
+    throw new Error(`Table overflow too large with data: ${withData.overflowY}px`);
+  }
+
+  if ((withData.maxRowHeightDelta ?? 99) > 0.5) {
+    throw new Error(
+      `Uneven row heights: delta=${withData.maxRowHeightDelta}, heights=${JSON.stringify(withData.rowHeights)}`,
+    );
+  }
+
+  if (withData.heightModRow !== 0) {
+    throw new Error(
+      `tableHeight % rowHeight !== 0 (mod=${withData.heightModRow}, area=${withData.tableAreaHeight}, row=${withData.rowHeights?.[0]})`,
+    );
+  }
+
+  if (Math.abs((withData.theadHeight ?? 0) - (withData.rowHeights?.[0] ?? -1)) > 0.5) {
+    throw new Error(
+      `Header height differs from body rows: thead=${withData.theadHeight}, body=${withData.rowHeights?.[0]}`,
     );
   }
 

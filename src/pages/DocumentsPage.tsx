@@ -7,11 +7,15 @@ import { PageHeader } from "@/components/PageHeader";
 import { PdfPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import {
-  DOCUMENT_LIST_MAX_PAGE_SIZE,
   DOCUMENT_LIST_MIN_PAGE_SIZE,
   DOCUMENT_STATUS_OK,
-  LIST_PANEL_ROW_HEIGHT_PX,
 } from "@/constants/globals";
+import {
+  applyListPanelFit,
+  clearListPanelFit,
+  fitListPanelLayout,
+  measureListPanelChrome,
+} from "@/utils/listPanelLayout";
 import { DOCUMENT_LANGUAGE_OPTIONS } from "@/constants/documentFilters";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDocumentFilterOptions } from "@/hooks/useDocumentFilterOptions";
@@ -264,28 +268,18 @@ export function DocumentsPage() {
 
     const compute = () => {
       window.requestAnimationFrame(() => {
-        const tableAreaHeight = tableEl.getBoundingClientRect().height;
-        const headerHeight =
-          tableEl.querySelector("thead")?.getBoundingClientRect().height ??
-          LIST_PANEL_ROW_HEIGHT_PX;
-        const bodyHeight = Math.max(0, tableAreaHeight - headerHeight);
-
-        const next = Math.max(
-          DOCUMENT_LIST_MIN_PAGE_SIZE,
-          Math.min(
-            DOCUMENT_LIST_MAX_PAGE_SIZE,
-            Math.floor(bodyHeight / LIST_PANEL_ROW_HEIGHT_PX),
-          ),
-        );
-
-        setPageSize((prev) => (prev === next ? prev : next));
+        const available =
+          cardEl.getBoundingClientRect().height -
+          measureListPanelChrome(cardEl, tableEl);
+        const fit = fitListPanelLayout(available);
+        applyListPanelFit(tableEl, fit);
+        setPageSize((prev) => (prev === fit.pageSize ? prev : fit.pageSize));
       });
     };
 
     const raf = window.requestAnimationFrame(() => compute());
     const ro = new ResizeObserver(() => compute());
     ro.observe(cardEl);
-    ro.observe(tableEl);
 
     const filtersEl = cardEl.querySelector("details.table-filters-advanced");
     filtersEl?.addEventListener("toggle", compute);
@@ -295,6 +289,7 @@ export function DocumentsPage() {
       window.cancelAnimationFrame(raf);
       ro.disconnect();
       filtersEl?.removeEventListener("toggle", compute);
+      clearListPanelFit(tableEl);
     };
   }, [detailVisible, isLoading, isFetching]);
 

@@ -25,7 +25,7 @@
   --card-padding: clamp(1rem, 1.5vw, 1.5rem);
   --touch-min: 2.75rem;
   --page-header-height: 5.5rem;
-  --list-panel-row-height: 36px;
+  --list-panel-row-height: 42px;
 }
 
 *,
@@ -515,30 +515,38 @@ select {
 }
 
 .table-list-body .data-table--list {
-  flex: 1;
+  width: 100%;
   height: 100%;
   table-layout: fixed;
 }
 
-.table-list-body .data-table--list tbody {
-  height: calc(100% - var(--list-panel-row-height));
-}
-
 .table-list-body .data-table--list thead tr,
 .table-list-body .data-table--list tbody tr {
-  height: calc(100% / var(--page-size, 1));
-}
-
-.table-list-body .data-table--list thead tr {
   height: var(--list-panel-row-height);
 }
 
-.table-list-body .data-table--list tbody td {
+.table-list-body .data-table--list th,
+.table-list-body .data-table--list td {
+  height: var(--list-panel-row-height);
+  padding-block: 0;
+  padding-inline: 0.75rem;
   vertical-align: middle;
+}
+
+.table-list-body .data-table--list tbody td {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
+}
+
+/* Avoid a double line + white strip under the last row (row border + pagination). */
+.table-list-body .data-table--list tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.card-panel > .table-list-body + .table-pagination {
+  margin-top: 0;
 }
 
 .table-list-overlay {

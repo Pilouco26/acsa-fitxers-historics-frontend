@@ -8,7 +8,8 @@ export const DOCUMENT_LIST_PREFETCH_PAGES = 5;
 export const SEARCH_DEBOUNCE_MS = 300;
 
 export const LIST_PANEL_FIXED_HEIGHT_PX = 204;
-export const LIST_PANEL_ROW_HEIGHT_PX = 36;
+/** Must match `--list-panel-row-height` and list-cell box height in index.css */
+export const LIST_PANEL_ROW_HEIGHT_PX = 42;
 
 export const DOCUMENT_STATUS_OK = "ok";
 export const DOCUMENT_STATUS_REVISIO = "revisio";
