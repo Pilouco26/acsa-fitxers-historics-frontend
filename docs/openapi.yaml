@@ -50,10 +50,12 @@ components:
         error: { type: string, nullable: true }
         folder: { type: string, nullable: true }
         target_folder: { type: string, nullable: true }
+        duplicate_path: { type: string, nullable: true }
         language: { type: string, nullable: true }
         sender: { type: string, nullable: true }
         recipient: { type: string, nullable: true }
         processed_at: { type: string, format: date-time, nullable: true }
+        deleted_at: { type: string, format: date-time, nullable: true }
         duplicate: { type: boolean }
         compare: { $ref: '#/components/schemas/CompareResponse' }
 
@@ -198,6 +200,20 @@ paths:
                     format: binary
       responses:
         '200': { description: Fitxers pujats }
+
+  /files/by-path:
+    get:
+      summary: Descarrega un PDF per camí relatiu (p. ex. duplicate_path)
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Contingut PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
 
   /documents:
     get:

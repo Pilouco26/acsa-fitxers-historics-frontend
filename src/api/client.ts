@@ -259,6 +259,12 @@ export function documentFileUrl(id: number): string {
   return `${BASE}/documents/${id}/file`;
 }
 
+/** PDF at a storage-relative path (e.g. document `duplicate_path`). */
+export function storedFileUrl(relativePath: string): string {
+  const qs = new URLSearchParams({ path: relativePath });
+  return `${BASE}/files/by-path?${qs}`;
+}
+
 // --- Jobs ---
 
 export function startAnalyzeJob(body: AnalyzeJobRequest): Promise<JobCreated> {

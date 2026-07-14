@@ -4,13 +4,16 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import {
   ApiError,
   deleteDocument,
-  getDocument,
   listDocuments,
   updateDocument,
 } from "@/api/client";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { PageHeader } from "@/components/PageHeader";
-import { PdfPreview, releaseDocumentPreview } from "@/components/PdfPreview";
+import {
+  PdfPreview,
+  releaseDocumentPreview,
+  releaseFilePathPreview,
+} from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import {
   DOCUMENT_LIST_MAX_PAGE_SIZE,
@@ -26,14 +29,17 @@ import type { DocumentOut } from "@/api/types";
 function isRepeatedDocument(doc: DocumentOut): boolean {
   return (
     doc.status === "repeated" ||
+    Boolean(doc.duplicate_path?.trim()) ||
     doc.duplicate === true ||
     doc.compare?.verdict?.toLowerCase() === "duplicate"
   );
 }
 
-function formatTrust(trust: number | null | undefined): string {
-  if (trust == null) return "—";
-  return `${Math.round(trust * 100)}%`;
+function duplicateLabel(path: string | null | undefined): string {
+  if (!path?.trim()) return "";
+  const normalized = path.replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || normalized;
 }
 
 export function RevisioPage() {
@@ -62,6 +68,8 @@ export function RevisioPage() {
 
   const detailVisible = Boolean(selected && detailOpen);
   const selectedIsRepeated = Boolean(selected && isRepeatedDocument(selected));
+  const duplicatePath = selected?.duplicate_path?.trim() || null;
+  const showOriginalCompare = compareOriginal && Boolean(duplicatePath);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["documents", DOCUMENT_STATUS_REVISIO, debouncedSearch, page, pageSize],
@@ -75,29 +83,8 @@ export function RevisioPage() {
     placeholderData: keepPreviousData,
   });
 
-  // List payloads may omit compare; hydrate so we can open the matched original.
-  const repeatedDetailQuery = useQuery({
-    queryKey: ["documents", "detail", selected?.id],
-    queryFn: () => getDocument(selected!.id),
-    enabled: Boolean(
-      selected &&
-        detailOpen &&
-        selectedIsRepeated &&
-        selected.compare?.best_match?.document_id == null,
-    ),
-  });
-
-  useEffect(() => {
-    const full = repeatedDetailQuery.data;
-    if (!full) return;
-    setSelected((prev) => (prev?.id === full.id ? { ...prev, ...full } : prev));
-  }, [repeatedDetailQuery.data]);
-
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
-  const originalMatch = selected?.compare?.best_match ?? null;
-  const originalDocumentId = originalMatch?.document_id ?? null;
-  const showOriginalCompare = compareOriginal && originalDocumentId != null;
 
   usePrefetchDocumentListPages({
     enabled: true,
@@ -225,12 +212,12 @@ export function RevisioPage() {
 
   async function forceCloseDocumentPreview(
     documentId: number,
-    alsoDocumentId?: number | null,
+    alsoFilePath?: string | null,
   ): Promise<void> {
     // Abort fetch, blank iframe, and revoke blob URL before React unmounts.
     await releaseDocumentPreview(documentId);
-    if (alsoDocumentId != null && alsoDocumentId !== documentId) {
-      await releaseDocumentPreview(alsoDocumentId);
+    if (alsoFilePath) {
+      await releaseFilePathPreview(alsoFilePath);
     }
 
     flushSync(() => {
@@ -243,8 +230,8 @@ export function RevisioPage() {
 
     // Catch any preview still registered after unmount (useLayoutEffect cleanup).
     await releaseDocumentPreview(documentId);
-    if (alsoDocumentId != null && alsoDocumentId !== documentId) {
-      await releaseDocumentPreview(alsoDocumentId);
+    if (alsoFilePath) {
+      await releaseFilePathPreview(alsoFilePath);
     }
   }
 
@@ -252,7 +239,7 @@ export function RevisioPage() {
     setError(null);
 
     try {
-      await forceCloseDocumentPreview(doc.id, originalDocumentId);
+      await forceCloseDocumentPreview(doc.id, duplicatePath);
       await deleteMutation.mutateAsync(doc.id);
     } catch (err) {
       if (!(err instanceof ApiError)) {
@@ -423,17 +410,9 @@ export function RevisioPage() {
                 <div className="alert alert-info revisio-duplicate-banner">
                   <p style={{ margin: 0 }}>
                     Possible duplicat
-                    {originalMatch?.relative_path
-                      ? `: ${originalMatch.relative_path}`
-                      : ""}
-                    {originalMatch?.trust != null
-                      ? ` (confiança ${formatTrust(originalMatch.trust)})`
-                      : ""}
-                    .
+                    {duplicatePath ? `: ${duplicateLabel(duplicatePath)}` : ""}.
                   </p>
-                  {repeatedDetailQuery.isFetching && originalDocumentId == null ? (
-                    <p style={{ margin: "0.5rem 0 0" }}>Cercant document original…</p>
-                  ) : originalDocumentId != null ? (
+                  {duplicatePath ? (
                     <div className="toolbar-row" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
                       <button
                         type="button"
@@ -447,7 +426,7 @@ export function RevisioPage() {
                     </div>
                   ) : (
                     <p style={{ margin: "0.5rem 0 0" }}>
-                      No s'ha trobat l'identificador del document original.
+                      No s'ha trobat el camí del document original.
                     </p>
                   )}
                 </div>
@@ -472,7 +451,7 @@ export function RevisioPage() {
             </div>
 
             <div className="card card-panel split-detail-preview">
-              {showOriginalCompare && originalDocumentId != null ? (
+              {showOriginalCompare && duplicatePath ? (
                 <div className="split-detail-compare">
                   <div className="split-detail-compare-pane">
                     <div className="toolbar-row" style={{ marginBottom: 0 }}>
@@ -510,9 +489,9 @@ export function RevisioPage() {
                       </button>
                     </div>
                     <PdfPreview
-                      key={`original-${originalDocumentId}`}
-                      documentId={originalDocumentId}
-                      title={originalMatch?.relative_path ?? "Original"}
+                      key={`original-${duplicatePath}`}
+                      filePath={duplicatePath}
+                      title={duplicateLabel(duplicatePath)}
                       rotation={originalRotation}
                     />
                   </div>

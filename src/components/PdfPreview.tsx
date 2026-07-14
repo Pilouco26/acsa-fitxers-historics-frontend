@@ -1,18 +1,33 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { buildHeaders, documentFileUrl } from "@/api/client";
+import { buildHeaders, documentFileUrl, storedFileUrl } from "@/api/client";
 
-const activeReleases = new Map<number, () => void>();
+const activeReleases = new Map<string, () => void>();
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }
 
-/** Force-close any in-flight preview fetch / iframe for a document. */
+function previewKey(documentId?: number | null, filePath?: string | null): string {
+  if (filePath) return `path:${filePath}`;
+  if (documentId != null) return `doc:${documentId}`;
+  return "empty";
+}
+
+/** Force-close any in-flight preview fetch / iframe for a document id. */
 export async function releaseDocumentPreview(documentId: number): Promise<void> {
-  const release = activeReleases.get(documentId);
+  await releasePreviewKey(`doc:${documentId}`);
+}
+
+/** Force-close any in-flight preview fetch / iframe for a storage path. */
+export async function releaseFilePathPreview(filePath: string): Promise<void> {
+  await releasePreviewKey(`path:${filePath}`);
+}
+
+async function releasePreviewKey(key: string): Promise<void> {
+  const release = activeReleases.get(key);
   if (release) {
     release();
-    activeReleases.delete(documentId);
+    activeReleases.delete(key);
   }
   await nextFrame();
   await nextFrame();
@@ -20,10 +35,13 @@ export async function releaseDocumentPreview(documentId: number): Promise<void> 
 
 export function PdfPreview({
   documentId,
+  filePath,
   title,
   rotation = 0,
 }: {
-  documentId: number;
+  documentId?: number | null;
+  /** Storage-relative path (e.g. document `duplicate_path`). */
+  filePath?: string | null;
   title: string;
   rotation?: number;
 }) {
@@ -31,6 +49,14 @@ export function PdfPreview({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  const sourceUrl = useMemo(() => {
+    if (filePath) return storedFileUrl(filePath);
+    if (documentId != null) return documentFileUrl(documentId);
+    return null;
+  }, [documentId, filePath]);
+
+  const cacheKey = previewKey(documentId, filePath);
 
   const iframeSrc = useMemo(() => {
     if (!objectUrl) return null;
@@ -59,13 +85,22 @@ export function PdfPreview({
       }
     };
 
-    activeReleases.set(documentId, release);
+    if (!sourceUrl) {
+      setLoading(false);
+      setError("No s'ha pogut determinar el fitxer a previsualitzar.");
+      setObjectUrl(null);
+      return () => {
+        release();
+      };
+    }
+
+    activeReleases.set(cacheKey, release);
 
     setLoading(true);
     setError(null);
     setObjectUrl(null);
 
-    fetch(documentFileUrl(documentId), {
+    fetch(sourceUrl, {
       headers: buildHeaders(),
       signal: ac.signal,
     })
@@ -89,10 +124,10 @@ export function PdfPreview({
       });
 
     return () => {
-      activeReleases.delete(documentId);
+      activeReleases.delete(cacheKey);
       release();
     };
-  }, [documentId]);
+  }, [cacheKey, sourceUrl]);
 
   if (error) {
     return <div className="alert alert-error">{error}</div>;

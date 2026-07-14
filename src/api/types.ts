@@ -21,10 +21,13 @@ export interface DocumentOut {
   error: string | null;
   folder: string | null;
   target_folder: string | null;
+  /** Relative storage path of the matched original when status is repeated. */
+  duplicate_path?: string | null;
   language: string | null;
   sender: string | null;
   recipient: string | null;
   processed_at: string | null;
+  deleted_at?: string | null;
   duplicate?: boolean;
   compare?: CompareResponse;
 }
