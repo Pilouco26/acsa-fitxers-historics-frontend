@@ -124,9 +124,76 @@ export async function getTranslatorAvailability(
   return Translator.availability({ sourceLanguage, targetLanguage });
 }
 
+function translatorPairError(source: string, target: string): Error {
+  return new Error(
+    `El parell d'idiomes ${source} → ${target} no està disponible al navegador.`,
+  );
+}
+
+function mapTranslatorCreateError(
+  err: unknown,
+  sourceLanguage: string,
+  targetLanguage: string,
+): Error {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  if (/unable to create translator/i.test(raw)) {
+    return new Error(
+      `No s'ha pogut crear el traductor (${sourceLanguage} → ${targetLanguage}). Comproveu els idiomes o torneu-ho a provar a Chrome d'escriptori.`,
+    );
+  }
+  return err instanceof Error
+    ? err
+    : new Error("No s'ha pogut crear el traductor del navegador.");
+}
+
+/**
+ * Create one Translator for a whole OCR/translate run.
+ * Must be called from a user gesture when the pack still needs downloading.
+ */
+export async function createBrowserTranslator(options: {
+  sourceLanguage: string;
+  targetLanguage: string;
+  onDownloadProgress?: (ratio: number) => void;
+}): Promise<TranslatorInstance> {
+  const Translator = window.Translator;
+  if (!Translator) {
+    throw new Error(
+      "Aquest navegador no admet la Translator API (cal Chrome 138+ d'escriptori).",
+    );
+  }
+
+  const pair = {
+    sourceLanguage: options.sourceLanguage,
+    targetLanguage: options.targetLanguage,
+  };
+
+  const availability = await Translator.availability(pair);
+  if (availability === "unavailable") {
+    throw translatorPairError(pair.sourceLanguage, pair.targetLanguage);
+  }
+
+  try {
+    return await Translator.create({
+      ...pair,
+      monitor(m) {
+        m.addEventListener("downloadprogress", (e) => {
+          options.onDownloadProgress?.(e.loaded);
+        });
+      },
+    });
+  } catch (err) {
+    throw mapTranslatorCreateError(
+      err,
+      pair.sourceLanguage,
+      pair.targetLanguage,
+    );
+  }
+}
+
 /**
  * Must be called from a user gesture when the pack is downloadable/downloading.
  * Creates the translator (triggers download if needed), then destroys it.
+ * Prefer `createBrowserTranslator` when you will translate immediately after.
  */
 export async function downloadTranslatorModel(options: {
   sourceLanguage: string;
@@ -147,25 +214,53 @@ export async function downloadTranslatorModel(options: {
 
   const availability = await Translator.availability(pair);
   if (availability === "unavailable") {
-    throw new Error(
-      `El parell d'idiomes ${pair.sourceLanguage} → ${pair.targetLanguage} no està disponible al navegador.`,
-    );
+    throw translatorPairError(pair.sourceLanguage, pair.targetLanguage);
   }
   if (availability === "available") {
     return "available";
   }
 
-  const translator = await Translator.create({
-    ...pair,
-    monitor(m) {
-      m.addEventListener("downloadprogress", (e) => {
-        options.onDownloadProgress?.(e.loaded);
-      });
-    },
-  });
+  const translator = await createBrowserTranslator(options);
   translator.destroy();
 
   return Translator.availability(pair);
+}
+
+/** Translate with an already-created Translator instance (reuse across pages). */
+export async function translateWithBrowserTranslator(options: {
+  translator: TranslatorInstance;
+  text: string;
+  signal?: AbortSignal;
+  onChunkProgress?: (done: number, total: number) => void;
+}): Promise<string> {
+  options.signal?.throwIfAborted();
+  const chunks = chunkTextForTranslation(options.text);
+  if (chunks.length === 0) return "";
+
+  const translated: string[] = [];
+  const { translator } = options;
+
+  for (let i = 0; i < chunks.length; i++) {
+    options.signal?.throwIfAborted();
+    options.onChunkProgress?.(i, chunks.length);
+
+    if (
+      typeof translator.translateStreaming === "function" &&
+      chunks[i].length > 800
+    ) {
+      let piece = "";
+      for await (const part of translator.translateStreaming(chunks[i])) {
+        options.signal?.throwIfAborted();
+        piece += part;
+      }
+      translated.push(piece);
+    } else {
+      translated.push(await translator.translate(chunks[i]));
+    }
+  }
+
+  options.onChunkProgress?.(chunks.length, chunks.length);
+  return translated.join("\n\n");
 }
 
 export async function translateTextInBrowser(options: {
@@ -176,59 +271,19 @@ export async function translateTextInBrowser(options: {
   onDownloadProgress?: (ratio: number) => void;
   onChunkProgress?: (done: number, total: number) => void;
 }): Promise<string> {
-  const Translator = window.Translator;
-  if (!Translator) {
-    throw new Error(
-      "Aquest navegador no admet la Translator API (cal Chrome 138+ d'escriptori).",
-    );
-  }
-
-  const pair = {
+  const translator = await createBrowserTranslator({
     sourceLanguage: options.sourceLanguage,
     targetLanguage: options.targetLanguage,
-  };
-
-  const availability = await Translator.availability(pair);
-  if (availability === "unavailable") {
-    throw new Error(
-      `El parell d'idiomes ${pair.sourceLanguage} → ${pair.targetLanguage} no està disponible al navegador.`,
-    );
-  }
-
-  options.signal?.throwIfAborted();
-
-  const translator = await Translator.create({
-    ...pair,
-    monitor(m) {
-      m.addEventListener("downloadprogress", (e) => {
-        options.onDownloadProgress?.(e.loaded);
-      });
-    },
+    onDownloadProgress: options.onDownloadProgress,
   });
 
   try {
-    options.signal?.throwIfAborted();
-    const chunks = chunkTextForTranslation(options.text);
-    const translated: string[] = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-      options.signal?.throwIfAborted();
-      options.onChunkProgress?.(i, chunks.length);
-
-      if (typeof translator.translateStreaming === "function" && chunks[i].length > 800) {
-        let piece = "";
-        for await (const part of translator.translateStreaming(chunks[i])) {
-          options.signal?.throwIfAborted();
-          piece += part;
-        }
-        translated.push(piece);
-      } else {
-        translated.push(await translator.translate(chunks[i]));
-      }
-    }
-
-    options.onChunkProgress?.(chunks.length, chunks.length);
-    return translated.join("\n\n");
+    return await translateWithBrowserTranslator({
+      translator,
+      text: options.text,
+      signal: options.signal,
+      onChunkProgress: options.onChunkProgress,
+    });
   } finally {
     translator.destroy();
   }

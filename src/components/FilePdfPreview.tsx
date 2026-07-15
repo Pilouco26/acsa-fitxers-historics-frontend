@@ -34,17 +34,17 @@ export function FilePdfPreview({ file, title }: { file: File; title: string }) {
     <div className={`pdf-preview-shell ${ocrOpen ? "pdf-preview-shell--ocr" : ""}`}>
       {loading && <p className="empty-state">Carregant PDF…</p>}
 
-      {!loading && (
+      {!loading && !ocrOpen && (
         <div className="pdf-preview-toolbar">
           <button
             type="button"
-            className={`btn btn-sm ${ocrOpen ? "btn-primary" : "btn-secondary"}`}
-            aria-pressed={ocrOpen}
+            className="btn btn-sm btn-secondary"
+            aria-pressed={false}
             disabled={!objectUrl}
             title="Traduir la pàgina actual (resultat al costat)"
-            onClick={() => setOcrOpen((open) => !open)}
+            onClick={() => setOcrOpen(true)}
           >
-            {ocrOpen ? "Tancar traducció" : "Traduir pàgina"}
+            Traduir pàgina
           </button>
         </div>
       )}

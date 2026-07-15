@@ -10,7 +10,127 @@ export type TranslatedPageResult = {
   plainParagraphs: string[];
 };
 
-/** Group OCR lines into paragraphs using vertical gaps (blank-line spacing). */
+/** Trailing quotes/brackets after sentence punctuation. */
+const TRAILING_CLOSERS = /["')\]]+$/;
+
+/** Letters that can start a word (Latin + common Romance accents). */
+const WORD_START = /[a-záéíóúàèìòùâêîôûäëïöüçñ]/i;
+
+/** Place + date like "Andorra la Vella, 29 de enero de 1990". */
+const DATE_CORE =
+  /\d{1,2}\s+de\s+[A-Za-zÁÉÍÓÚÀÈÒÑÜáéíóúàèòñü]+\s+de\s+\d{4}/gi;
+
+/** Lowercase particles allowed inside a place name. */
+const PLACE_PARTICLE = /^(?:la|el|de|del|los|las|les|y|i|di|du|des)$/i;
+
+/** Footers / contact lines that should stay on their own block. */
+const CONTACT_BREAK_BEFORE =
+  /(?<=\S)\s+(?=(?:Avda\.?|Avenida|Tel\.?|Fax\.?|Tix\.?|Telex)\b)/gi;
+
+
+/** Small words that often end a soft-wrapped line. */
+const TRAILING_CONNECTIVE =
+  /\b(?:de|del|la|el|los|las|les|y|e|o|u|a|al|en|con|por|para|the|and|of|to|for|a|an|ou|et|des|du|le|un|une)$/i;
+
+/** Abbreviations that should not end a sentence at their trailing period. */
+const ABBREVIATION_END =
+  /\b(?:Sr|Sra|Dr|Dra|Avda|Av|Tel|Fax|Tix|Inc|Ltd|etc|núm|Núm|C|c|S\.?N\.?C|S\.?L|S\.?A)\.$/i;
+
+function startsWithLowercaseWord(text: string): boolean {
+  const first = text.trim()[0];
+  return Boolean(
+    first && WORD_START.test(first) && first === first.toLowerCase(),
+  );
+}
+
+function startsWithUppercaseWord(text: string): boolean {
+  const first = text.trim()[0];
+  return Boolean(
+    first && WORD_START.test(first) && first === first.toUpperCase(),
+  );
+}
+
+/** True when `text` ends a sentence/clause that should open a new translation block. */
+export function endsWithSentenceBoundary(text: string): boolean {
+  const trimmed = text.trim().replace(TRAILING_CLOSERS, "").trimEnd();
+  if (!trimmed) return false;
+  if (ABBREVIATION_END.test(trimmed)) return false;
+  return /[.!?…:;]$/.test(trimmed);
+}
+
+/**
+ * Soft line wrap (same paragraph) vs hard break (new paragraph for MT).
+ * Prefer joining mid-sentence wraps, but keep letterhead / address blocks apart.
+ */
+export function isSoftWrappedContinuation(
+  previousText: string,
+  nextText: string,
+): boolean {
+  const prev = previousText.trim();
+  const next = nextText.trim();
+  if (!prev || !next) return false;
+
+  // Syllable hyphenation across lines.
+  if (/[-\u2010\u2011\u2012\u2013]$/.test(prev)) return true;
+
+  const nextLower = startsWithLowercaseWord(next);
+  const nextUpper = startsWithUppercaseWord(next);
+
+  // Mid-sentence wrap with lowercase continuation.
+  if (!endsWithSentenceBoundary(prev) && nextLower) return true;
+
+  // Connective left hanging on the previous line (OCR wrap).
+  if (!endsWithSentenceBoundary(prev) && TRAILING_CONNECTIVE.test(prev)) {
+    return true;
+  }
+
+  // No terminal punctuation + capital next → letterhead / date / address block.
+  if (!endsWithSentenceBoundary(prev) && nextUpper) return false;
+
+  // Finished sentence: only join when the next line looks like a wrap artifact.
+  if (endsWithSentenceBoundary(prev) && nextLower) return true;
+
+  return false;
+}
+
+function joinWrappedLinePair(previous: string, next: string): string {
+  const prev = previous.trim();
+  const following = next.trim();
+  if (/[-\u2010\u2011\u2012\u2013]$/.test(prev)) {
+    return `${prev.replace(/[-\u2010\u2011\u2012\u2013]$/, "")}${following}`;
+  }
+  return `${prev} ${following}`.replace(/\s+/g, " ").trim();
+}
+
+/** Join OCR line texts for translation (handles hyphenated wraps). */
+export function joinOcrLineTexts(lines: Array<{ text: string }>): string {
+  if (lines.length === 0) return "";
+  let joined = lines[0].text.trim();
+  for (let i = 1; i < lines.length; i++) {
+    joined = joinWrappedLinePair(joined, lines[i].text);
+  }
+  return joined;
+}
+
+/** Merge OCR/plain lines that look like soft wraps into paragraph strings. */
+export function mergeSoftWrappedLines(lines: string[]): string[] {
+  const cleaned = lines.map((line) => line.trim()).filter(Boolean);
+  if (cleaned.length === 0) return [];
+
+  const paragraphs: string[] = [cleaned[0]];
+  for (let i = 1; i < cleaned.length; i++) {
+    const prev = paragraphs[paragraphs.length - 1];
+    const next = cleaned[i];
+    if (isSoftWrappedContinuation(prev, next)) {
+      paragraphs[paragraphs.length - 1] = joinWrappedLinePair(prev, next);
+    } else {
+      paragraphs.push(next);
+    }
+  }
+  return paragraphs;
+}
+
+/** Group OCR lines into paragraphs using gaps + soft-wrap text heuristics. */
 export function groupLinesIntoParagraphs(
   lines: OcrLine[],
   pageHeight: number,
@@ -25,7 +145,15 @@ export function groupLinesIntoParagraphs(
     .sort((a, b) => a - b);
   const medianH =
     heights[Math.floor(heights.length / 2)] ?? Math.max(pageHeight * 0.02, 1);
-  const gapThreshold = medianH * 1.65;
+  /** Gaps below this stay together when text may still be one unit. */
+  const softGap = medianH * 1.45;
+  /**
+   * Beyond this, only keep together when text clearly continues
+   * (OCR often inserts a “blank” mid-wrap on aged scans).
+   */
+  const hardGap = medianH * 2.75;
+  /** Absurd gap → new column / footer / stamp, never join. */
+  const breakGap = medianH * 5.5;
 
   const paragraphs: OcrLine[][] = [];
   let current: OcrLine[] = [sorted[0]];
@@ -33,7 +161,25 @@ export function groupLinesIntoParagraphs(
     const prev = sorted[i - 1];
     const line = sorted[i];
     const gap = line.bbox.y0 - prev.bbox.y1;
-    if (gap > gapThreshold) {
+    const softWrap = isSoftWrappedContinuation(prev.text, line.text);
+
+    let startNew = false;
+    if (gap > breakGap) {
+      startNew = true;
+    } else if (softWrap) {
+      // Mid-sentence / hyphen wrap: keep even across a short blank-looking gap.
+      startNew = false;
+    } else if (gap > hardGap) {
+      startNew = true;
+    } else if (gap > softGap) {
+      // Structural gap after a finished sentence/block → new paragraph.
+      startNew = true;
+    } else if (!endsWithSentenceBoundary(prev.text) && startsWithUppercaseWord(line.text)) {
+      // Tight letterhead / address lines with no mid-sentence wrap.
+      startNew = true;
+    }
+
+    if (startNew) {
       paragraphs.push(current);
       current = [line];
     } else {
@@ -44,24 +190,180 @@ export function groupLinesIntoParagraphs(
   return paragraphs;
 }
 
-/** Prefer blank-line / OCR line breaks so the translator keeps document structure. */
+/**
+ * Split a dense single-line translation into readable structural blocks
+ * (letterhead, date, address, body sentences, footer).
+ */
+export function splitDenseProse(text: string): string[] {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (!compact) return [];
+
+  let working = injectPlaceDateBreaks(compact);
+  // Break after a closing parenthetical place before a new capitalized sentence.
+  working = working.replace(/(\([^)]+\))\s+(?=[A-ZÁÉÍÓÚÑÜ])/g, "$1\n\n");
+  // Break before street / phone footers (not every Edifici mid-address).
+  working = working.replace(CONTACT_BREAK_BEFORE, "\n\n");
+
+  const chunks = working
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  const blocks: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.length < 110) {
+      blocks.push(chunk);
+      continue;
+    }
+    blocks.push(...splitIntoSentences(chunk));
+  }
+
+  return blocks.length > 0 ? blocks : [compact];
+}
+
+/** Insert breaks around "Place, DD de month de YYYY" without overlapping leftovers. */
+function injectPlaceDateBreaks(text: string): string {
+  DATE_CORE.lastIndex = 0;
+  const parts: string[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DATE_CORE.exec(text)) !== null) {
+    const dateStart = match.index;
+    const dateEnd = dateStart + match[0].length;
+    const region = text.slice(last, dateStart);
+    const commaAt = region.lastIndexOf(",");
+    if (commaAt < 0 || region.slice(commaAt + 1).trim() !== "") {
+      continue;
+    }
+
+    const beforeComma = region.slice(0, commaAt);
+    const words = beforeComma.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    if (!/^[A-ZÁÉÍÓÚÑÜ]/.test(words[words.length - 1] ?? "")) continue;
+
+    // Place names are short: e.g. "Andorra la Vella" (≤2 capitals + particles).
+    let startWord = words.length - 1;
+    let capitals = 1;
+    for (let i = words.length - 2; i >= 0; i--) {
+      const word = words[i];
+      if (PLACE_PARTICLE.test(word)) {
+        startWord = i;
+        continue;
+      }
+      if (/^[A-ZÁÉÍÓÚÑÜ]/.test(word) && capitals < 2) {
+        startWord = i;
+        capitals += 1;
+        continue;
+      }
+      break;
+    }
+    while (
+      startWord < words.length &&
+      !/^[A-ZÁÉÍÓÚÑÜ]/.test(words[startWord] ?? "")
+    ) {
+      startWord += 1;
+    }
+    if (startWord >= words.length) continue;
+
+    const placeWords = words.slice(startWord);
+    const placeStr = placeWords.join(" ");
+    const placeAt = beforeComma.lastIndexOf(placeStr);
+    if (placeAt < 0) continue;
+
+    const absPlace = last + placeAt;
+    const before = text.slice(last, absPlace).trim();
+    const placeDate = text.slice(absPlace, dateEnd).trim();
+    if (before) parts.push(before);
+    if (placeDate) parts.push(placeDate);
+    last = dateEnd;
+    while (last < text.length && /\s/.test(text[last])) last += 1;
+  }
+
+  const tail = text.slice(last).trim();
+  if (tail) parts.push(tail);
+  return parts.length > 0 ? parts.join("\n\n") : text;
+}
+
+/** Split prose on sentence boundaries while keeping abbreviations intact. */
+function splitIntoSentences(text: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch !== "." && ch !== "!" && ch !== "?" && ch !== "…") continue;
+
+    const until = text.slice(start, i + 1).trim();
+    if (ABBREVIATION_END.test(until)) continue;
+
+    const rest = text.slice(i + 1);
+    const nextMeaningful = rest.match(/\S/);
+    if (
+      nextMeaningful &&
+      !startsWithUppercaseWord(rest.slice(rest.indexOf(nextMeaningful[0])))
+    ) {
+      continue;
+    }
+
+    const sentence = text.slice(start, i + 1).trim();
+    if (sentence) parts.push(sentence);
+    start = i + 1;
+    while (start < text.length && /\s/.test(text[start])) start += 1;
+  }
+
+  const tail = text.slice(start).trim();
+  if (tail) parts.push(tail);
+  return parts.length > 0 ? parts : [text.trim()].filter(Boolean);
+}
+
+/**
+ * Prefer blank-line paragraphs, then soft-merged lines, then dense prose splits
+ * so letterhead / date / address / body stay visually separated.
+ */
+export function splitDocumentBlocks(text: string): string[] {
+  const trimmed = text.replace(/\r\n/g, "\n").trim();
+  if (!trimmed) return [];
+
+  const byBlank = trimmed
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (byBlank.length > 1) {
+    return byBlank.flatMap((block) => expandDocumentBlock(block));
+  }
+
+  return expandDocumentBlock(trimmed);
+}
+
+function expandDocumentBlock(block: string): string[] {
+  const lines = block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length > 1) {
+    return mergeSoftWrappedLines(lines);
+  }
+  return splitDenseProse(block);
+}
+
+/**
+ * Split OCR plain text into translation paragraphs.
+ * Soft-wrapped visual lines are merged so the translator sees full sentences.
+ * Dense display splits happen later via `splitDocumentBlocks`.
+ */
 export function splitTextIntoParagraphs(text: string): string[] {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\u000c/g, "").trim();
   if (!normalized) return [];
 
-  const byBlank = normalized
-    .split(/\n{2,}/)
-    .map((block) => block.replace(/\n+/g, " ").replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-  if (byBlank.length > 1) return byBlank;
-
-  const byLine = normalized
-    .split("\n")
+  const lines = normalized
+    .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
-  if (byLine.length > 1) return byLine;
+  if (lines.length <= 1) {
+    return [normalized.replace(/\s+/g, " ").trim()].filter(Boolean);
+  }
 
-  return [normalized];
+  return mergeSoftWrappedLines(lines);
 }
 
 /** Spread a paragraph translation back onto its source OCR lines by weight. */
@@ -200,17 +502,14 @@ export async function ocrAndTranslateCanvas(options: {
   }
 
   const lines = usableOcrLines(ocr.lines, ocr.height);
+  // Prefer line boxes whenever we have more than one line so soft-wrap merges
+  // still redistribute onto the original layout (even for a single paragraph).
   const lineParagraphs =
-    lines.length >= 4 ? groupLinesIntoParagraphs(lines, ocr.height) : [];
-  const sourceParagraphs =
-    lineParagraphs.length > 1
-      ? lineParagraphs.map((group) =>
-          group
-            .map((line) => line.text)
-            .join(" ")
-            .trim(),
-        )
-      : splitTextIntoParagraphs(ocr.text);
+    lines.length >= 2 ? groupLinesIntoParagraphs(lines, ocr.height) : [];
+  const useLineLayout = lineParagraphs.length > 0;
+  const sourceParagraphs = useLineLayout
+    ? lineParagraphs.map((group) => joinOcrLineTexts(group))
+    : splitTextIntoParagraphs(ocr.text);
 
   const translatedParas: string[] = [];
   for (const paragraph of sourceParagraphs) {
@@ -220,7 +519,7 @@ export async function ocrAndTranslateCanvas(options: {
   }
 
   let out: TranslatedOcrLine[] = [];
-  if (lineParagraphs.length > 1) {
+  if (useLineLayout) {
     for (let i = 0; i < lineParagraphs.length; i++) {
       out.push(
         ...distributeTranslationToLines(

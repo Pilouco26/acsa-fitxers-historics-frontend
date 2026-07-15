@@ -387,6 +387,12 @@ export function DocumentsPage() {
 
   function toggleDetailPanel() {
     if (!selected) return;
+    // In translation mode, first return to document detail (keep URL).
+    if (translateFocusOpen) {
+      setTranslateOpen(false);
+      setPageTranslateOpen(false);
+      return;
+    }
     if (detailOpen) {
       navigate("/documents");
       return;
@@ -713,6 +719,7 @@ export function DocumentsPage() {
             )}
 
             <div className="card card-panel split-detail-preview">
+              {!pageTranslateOpen && (
               <div className="toolbar-row" style={{ marginBottom: 0 }}>
                 <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
                   Vista prèvia
@@ -741,18 +748,18 @@ export function DocumentsPage() {
                     if (next) setTranslateOpen(false);
                   }}
                 >
-                  {pageTranslateOpen ? "Tancar traducció" : "Traduir pàgina"}
+                  Traduir pàgina
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={rotatePreview}
                   title="Rotar 90°"
-                  disabled={pageTranslateOpen}
                 >
                   Rotar
                 </button>
               </div>
+              )}
               <PdfPreview
                 documentId={selected.id}
                 title={editName || selected.original_name || "PDF"}
@@ -769,7 +776,10 @@ export function DocumentsPage() {
 
             <BackendDocumentTranslatePanel
               translatedText={selected.translated_text}
+              translatedPages={selected.translated_pages}
               documentLanguage={selected.language}
+              docType={selected.doc_type}
+              docTypeCa={selected.doc_type_ca}
               open={translateOpen && !pageTranslateOpen}
               onClose={() => setTranslateOpen(false)}
             />

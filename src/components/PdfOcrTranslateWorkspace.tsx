@@ -1,15 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
-  downloadTranslatorModel,
+  createBrowserTranslator,
   getTranslatorAvailability,
   isBrowserTranslatorSupported,
-  translateTextInBrowser,
+  translateWithBrowserTranslator,
 } from "@/utils/browserTranslate";
 import { openPdfDocument, renderPdfPageToCanvas } from "@/utils/pdfDocument";
-import { FittingOcrTranslatedLine } from "@/components/FittingOcrTranslatedLine";
 import {
   ocrAndTranslateCanvas,
+  splitDocumentBlocks,
   type TranslatedPageResult,
 } from "@/utils/ocrTranslateHelpers";
 import {
@@ -86,6 +86,49 @@ function busyPhase(phase: Phase): boolean {
   );
 }
 
+function revokePreviewUrls(urls: Record<number, string>) {
+  for (const url of Object.values(urls)) {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  }
+}
+
+function canvasToObjectUrl(canvas: HTMLCanvasElement): Promise<string> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("No s'ha pogut generar la vista prèvia de la pàgina."));
+          return;
+        }
+        resolve(URL.createObjectURL(blob));
+      },
+      "image/jpeg",
+      0.82,
+    );
+  });
+}
+
+function syncScrollRatio(source: HTMLElement, target: HTMLElement) {
+  const maxSource = source.scrollHeight - source.clientHeight;
+  const maxTarget = target.scrollHeight - target.clientHeight;
+  if (maxTarget <= 0) {
+    target.scrollTop = 0;
+    return;
+  }
+  const ratio = maxSource > 0 ? source.scrollTop / maxSource : 0;
+  target.scrollTop = ratio * maxTarget;
+}
+
+function scrollStageToPage(stage: HTMLElement, page: number) {
+  const el = stage.querySelector<HTMLElement>(`[data-ocr-page="${page}"]`);
+  if (!el) return;
+  const top =
+    el.getBoundingClientRect().top -
+    stage.getBoundingClientRect().top +
+    stage.scrollTop;
+  stage.scrollTop = Math.max(0, top);
+}
+
 /**
  * Client-side OCR + browser translate for the current PDF preview page.
  * Separate from backend document translation (`BackendDocumentTranslatePanel`).
@@ -115,7 +158,10 @@ export function PdfOcrTranslateWorkspace({
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pageSize, setPageSize] = useState({ width: 1, height: 1 });
+  const [pagePreviews, setPagePreviews] = useState<Record<number, string>>({});
+  const [pageSizes, setPageSizes] = useState<
+    Record<number, { width: number; height: number }>
+  >({});
   const [pageResults, setPageResults] = useState<
     Record<number, TranslatedPageResult>
   >({});
@@ -123,8 +169,26 @@ export function PdfOcrTranslateWorkspace({
 
   const abortRef = useRef<AbortController | null>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
-  const previewRef = useRef<HTMLCanvasElement | null>(null);
   const panesRef = useRef<HTMLDivElement | null>(null);
+  const originalStageRef = useRef<HTMLDivElement | null>(null);
+  const translationStageRef = useRef<HTMLDivElement | null>(null);
+  const syncingScrollRef = useRef(false);
+  const scrollToPageRef = useRef<number | null>(null);
+  const pageNumberRef = useRef(pageNumber);
+  const pagePreviewsRef = useRef<Record<number, string>>({});
+
+  pageNumberRef.current = pageNumber;
+
+  const pageIndexes = useMemo(
+    () => Array.from({ length: pageCount }, (_, i) => i + 1),
+    [pageCount],
+  );
+
+  function goToPage(next: number) {
+    const clamped = Math.min(Math.max(1, next), Math.max(pageCount, 1));
+    scrollToPageRef.current = clamped;
+    setPageNumber(clamped);
+  }
 
   useEffect(() => {
     if (!open) {
@@ -147,6 +211,7 @@ export function PdfOcrTranslateWorkspace({
     setError(null);
     setPageResults({});
     setZoom(1);
+    scrollToPageRef.current = 1;
   }, [open, objectUrl, documentLanguage, defaultTargetLanguage]);
 
   useEffect(() => {
@@ -154,6 +219,12 @@ export function PdfOcrTranslateWorkspace({
 
     let cancelled = false;
     const ac = new AbortController();
+
+    revokePreviewUrls(pagePreviewsRef.current);
+    pagePreviewsRef.current = {};
+    setPagePreviews({});
+    setPageSizes({});
+    setPageCount(0);
 
     (async () => {
       try {
@@ -168,6 +239,23 @@ export function PdfOcrTranslateWorkspace({
         }
         pdfRef.current = pdf;
         setPageCount(pdf.numPages);
+
+        const nextPreviews: Record<number, string> = {};
+        const nextSizes: Record<number, { width: number; height: number }> = {};
+
+        for (let page = 1; page <= pdf.numPages; page++) {
+          ac.signal.throwIfAborted();
+          const canvas = await renderPdfPageToCanvas(pdf, page, {
+            scale: 1.35,
+            signal: ac.signal,
+          });
+          if (cancelled) return;
+          nextPreviews[page] = await canvasToObjectUrl(canvas);
+          nextSizes[page] = { width: canvas.width, height: canvas.height };
+          pagePreviewsRef.current = nextPreviews;
+          setPagePreviews({ ...nextPreviews });
+          setPageSizes({ ...nextSizes });
+        }
       } catch (err) {
         if (cancelled) return;
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -186,49 +274,14 @@ export function PdfOcrTranslateWorkspace({
     };
   }, [open, objectUrl]);
 
-  useLayoutEffect(() => {
-    if (!open || !pdfRef.current) return;
-
-    let cancelled = false;
-    const ac = new AbortController();
-    const pdf = pdfRef.current;
-
-    (async () => {
-      try {
-        const canvas = await renderPdfPageToCanvas(pdf, pageNumber, {
-          scale: 1.35,
-          signal: ac.signal,
-        });
-        if (cancelled) return;
-        setPageSize({ width: canvas.width, height: canvas.height });
-        const host = previewRef.current;
-        if (host) {
-          const ctx = host.getContext("2d");
-          if (ctx) {
-            host.width = canvas.width;
-            host.height = canvas.height;
-            ctx.clearRect(0, 0, host.width, host.height);
-            ctx.drawImage(canvas, 0, 0);
-          }
-        }
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      ac.abort();
-    };
-  }, [open, objectUrl, pageNumber, pageCount]);
-
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
       const pdf = pdfRef.current;
       pdfRef.current = null;
       if (pdf) void pdf.cleanup();
+      revokePreviewUrls(pagePreviewsRef.current);
+      pagePreviewsRef.current = {};
     };
   }, []);
 
@@ -239,6 +292,22 @@ export function PdfOcrTranslateWorkspace({
     pdfRef.current = null;
     if (pdf) void pdf.cleanup();
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const targetPage = scrollToPageRef.current;
+    if (targetPage == null || targetPage !== pageNumber) return;
+    scrollToPageRef.current = null;
+
+    const original = originalStageRef.current;
+    const translation = translationStageRef.current;
+    syncingScrollRef.current = true;
+    if (original) scrollStageToPage(original, targetPage);
+    if (translation) scrollStageToPage(translation, targetPage);
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  }, [open, pageNumber, pagePreviews, pageResults]);
 
   useEffect(() => {
     if (!open) return;
@@ -283,14 +352,65 @@ export function PdfOcrTranslateWorkspace({
     return () => panes.removeEventListener("wheel", onWheel);
   }, [open]);
 
-  const currentResult = pageResults[pageNumber] ?? null;
+  useEffect(() => {
+    if (!open) return;
+    const original = originalStageRef.current;
+    const translation = translationStageRef.current;
+    if (!original || !translation) return;
 
-  const aspectRatio = useMemo(() => {
-    const size = currentResult
-      ? { width: currentResult.width, height: currentResult.height }
-      : pageSize;
-    return size.width / Math.max(size.height, 1);
-  }, [currentResult, pageSize]);
+    const onOriginalScroll = () => {
+      if (syncingScrollRef.current) return;
+      syncingScrollRef.current = true;
+      syncScrollRatio(original, translation);
+      updatePageFromStage(original);
+      requestAnimationFrame(() => {
+        syncingScrollRef.current = false;
+      });
+    };
+
+    const onTranslationScroll = () => {
+      if (syncingScrollRef.current) return;
+      syncingScrollRef.current = true;
+      syncScrollRatio(translation, original);
+      updatePageFromStage(translation);
+      requestAnimationFrame(() => {
+        syncingScrollRef.current = false;
+      });
+    };
+
+    function updatePageFromStage(stage: HTMLElement) {
+      const pages = stage.querySelectorAll<HTMLElement>("[data-ocr-page]");
+      if (pages.length === 0) return;
+
+      const stageTop = stage.getBoundingClientRect().top + stage.clientHeight * 0.35;
+      let bestPage = pageNumberRef.current;
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      pages.forEach((el) => {
+        const page = Number(el.dataset.ocrPage);
+        if (!Number.isFinite(page)) return;
+        const rect = el.getBoundingClientRect();
+        const distance = Math.abs(rect.top - stageTop);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestPage = page;
+        }
+      });
+
+      if (bestPage !== pageNumberRef.current) {
+        setPageNumber(bestPage);
+      }
+    }
+
+    original.addEventListener("scroll", onOriginalScroll, { passive: true });
+    translation.addEventListener("scroll", onTranslationScroll, {
+      passive: true,
+    });
+    return () => {
+      original.removeEventListener("scroll", onOriginalScroll);
+      translation.removeEventListener("scroll", onTranslationScroll);
+    };
+  }, [open, pageCount]);
 
   async function runOcrAndTranslateAll() {
     if (!objectUrl) {
@@ -333,82 +453,88 @@ export function PdfOcrTranslateWorkspace({
           `El parell ${packSourceLanguage} → ${targetLanguage} no està disponible al navegador.`,
         );
       }
-      if (availability !== "available") {
-        await downloadTranslatorModel({
-          sourceLanguage: packSourceLanguage,
-          targetLanguage,
-          onDownloadProgress: (ratio) => setProgress(ratio),
-        });
-      }
 
-      let pdf = pdfRef.current;
-      if (!pdf) {
-        pdf = await openPdfDocument(objectUrl, ac.signal);
-        pdfRef.current = pdf;
-        setPageCount(pdf.numPages);
-      }
+      // Create once while the click gesture is still valid; reuse for every page.
+      const translator = await createBrowserTranslator({
+        sourceLanguage: packSourceLanguage,
+        targetLanguage,
+        onDownloadProgress: (ratio) => setProgress(ratio),
+      });
 
-      const totalPages = pdf.numPages;
-      if (totalPages < 1) {
-        throw new Error("El document no té pàgines.");
-      }
-
-      const nextResults: Record<number, TranslatedPageResult> = {};
-      let pagesWithText = 0;
-
-      for (let page = 1; page <= totalPages; page++) {
-        ac.signal.throwIfAborted();
-        setPageNumber(page);
-        setPhase("rendering");
-        setStatusMessage(`Pàgina ${page}/${totalPages}: preparant…`);
-        setProgress((page - 1) / totalPages);
-
-        const canvas = await renderPdfPageToCanvas(pdf, page, {
-          scale: 2.5,
-          signal: ac.signal,
-        });
-        setPageSize({ width: canvas.width, height: canvas.height });
-
-        setPhase("ocr");
-        setStatusMessage(`Pàgina ${page}/${totalPages}: llegint text…`);
-        const pageResult = await ocrAndTranslateCanvas({
-          canvas,
-          sourceLanguage: packSourceLanguage,
-          targetLanguage,
-          signal: ac.signal,
-          onOcrProgress: (ratio) =>
-            setProgress((page - 1 + ratio * 0.45) / totalPages),
-          translate: async (text) => {
-            setPhase("translating");
-            setStatusMessage(`Pàgina ${page}/${totalPages}: traduint…`);
-            return translateTextInBrowser({
-              text,
-              sourceLanguage: packSourceLanguage,
-              targetLanguage,
-              signal: ac.signal,
-            });
-          },
-        });
-
-        if (
-          pageResult.lines.length > 0 ||
-          pageResult.plainParagraphs.length > 0
-        ) {
-          pagesWithText += 1;
+      try {
+        let pdf = pdfRef.current;
+        if (!pdf) {
+          pdf = await openPdfDocument(objectUrl, ac.signal);
+          pdfRef.current = pdf;
+          setPageCount(pdf.numPages);
         }
-        nextResults[page] = pageResult;
-        setPageResults({ ...nextResults });
-        setProgress(page / totalPages);
-      }
 
-      ac.signal.throwIfAborted();
-      if (pagesWithText === 0) {
-        throw new Error("No s'ha trobat text en cap pàgina del document.");
-      }
+        const totalPages = pdf.numPages;
+        if (totalPages < 1) {
+          throw new Error("El document no té pàgines.");
+        }
 
-      setPageNumber(1);
-      setStatusMessage(null);
-      setPhase("done");
+        const nextResults: Record<number, TranslatedPageResult> = {};
+        let pagesWithText = 0;
+
+        for (let page = 1; page <= totalPages; page++) {
+          ac.signal.throwIfAborted();
+          setPageNumber(page);
+          setPhase("rendering");
+          setStatusMessage(`Pàgina ${page}/${totalPages}: preparant…`);
+          setProgress((page - 1) / totalPages);
+
+          const canvas = await renderPdfPageToCanvas(pdf, page, {
+            scale: 2.5,
+            signal: ac.signal,
+          });
+          setPageSizes((prev) => ({
+            ...prev,
+            [page]: { width: canvas.width, height: canvas.height },
+          }));
+
+          setPhase("ocr");
+          setStatusMessage(`Pàgina ${page}/${totalPages}: llegint text…`);
+          const pageResult = await ocrAndTranslateCanvas({
+            canvas,
+            sourceLanguage: packSourceLanguage,
+            targetLanguage,
+            signal: ac.signal,
+            onOcrProgress: (ratio) =>
+              setProgress((page - 1 + ratio * 0.45) / totalPages),
+            translate: async (text) => {
+              setPhase("translating");
+              setStatusMessage(`Pàgina ${page}/${totalPages}: traduint…`);
+              return translateWithBrowserTranslator({
+                translator,
+                text,
+                signal: ac.signal,
+              });
+            },
+          });
+
+          if (
+            pageResult.lines.length > 0 ||
+            pageResult.plainParagraphs.length > 0
+          ) {
+            pagesWithText += 1;
+          }
+          nextResults[page] = pageResult;
+          setPageResults({ ...nextResults });
+          setProgress(page / totalPages);
+        }
+
+        ac.signal.throwIfAborted();
+        if (pagesWithText === 0) {
+          throw new Error("No s'ha trobat text en cap pàgina del document.");
+        }
+
+        goToPage(1);
+        setStatusMessage(null);
+        setPhase("done");
+      } finally {
+        translator.destroy();
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError(
@@ -424,8 +550,6 @@ export function PdfOcrTranslateWorkspace({
   if (!open) return null;
 
   const busy = busyPhase(phase);
-  const layoutH = Math.max(currentResult?.height ?? pageSize.height, 1);
-  const layoutW = Math.max(currentResult?.width ?? pageSize.width, 1);
 
   return (
     <div className="pdf-ocr-workspace">
@@ -435,10 +559,7 @@ export function PdfOcrTranslateWorkspace({
             type="button"
             className="btn btn-secondary btn-sm"
             disabled={busy || pageNumber <= 1}
-            onClick={() => {
-              setZoom(1);
-              setPageNumber((n) => Math.max(1, n - 1));
-            }}
+            onClick={() => goToPage(pageNumber - 1)}
           >
             ←
           </button>
@@ -450,10 +571,7 @@ export function PdfOcrTranslateWorkspace({
             type="button"
             className="btn btn-secondary btn-sm"
             disabled={busy || !pageCount || pageNumber >= pageCount}
-            onClick={() => {
-              setZoom(1);
-              setPageNumber((n) => n + 1);
-            }}
+            onClick={() => goToPage(pageNumber + 1)}
           >
             →
           </button>
@@ -537,12 +655,15 @@ export function PdfOcrTranslateWorkspace({
           disabled={busy || !supported || !objectUrl || pageCount < 1}
           onClick={() => void runOcrAndTranslateAll()}
         >
-          {busy
-            ? "Traduint…"
-            : pageCount > 1
-              ? `Traduir tot (${pageCount})`
-              : "Traduir"}
+          {busy ? "Traduint…" : "Traduir"}
         </button>
+
+        {statusMessage && (
+          <p className="pdf-ocr-workspace-status" aria-live="polite">
+            {statusMessage}
+            {busy ? ` ${Math.round(progress * 100)}%` : ""}
+          </p>
+        )}
       </div>
 
       {!supported && (
@@ -552,79 +673,91 @@ export function PdfOcrTranslateWorkspace({
         </div>
       )}
 
-      {statusMessage && (
-        <p className="empty-state pdf-ocr-workspace-status">
-          {statusMessage}
-          {busy ? ` ${Math.round(progress * 100)}%` : ""}
-        </p>
-      )}
-
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="pdf-ocr-workspace-panes" ref={panesRef}>
-        <section className="pdf-ocr-workspace-pane" aria-label="Pàgina original">
+        <section className="pdf-ocr-workspace-pane" aria-label="Document original">
           <h4 className="pdf-ocr-workspace-pane-title">Original</h4>
-          <div className="pdf-ocr-doc-stage">
-            <div
-              className="pdf-ocr-paper pdf-ocr-paper--original"
-              style={{ zoom }}
-            >
-              <canvas ref={previewRef} />
+          <div className="pdf-ocr-doc-stage" ref={originalStageRef}>
+            <div className="pdf-ocr-doc-stack" style={{ zoom }}>
+              {pageIndexes.map((page) => {
+                const preview = pagePreviews[page];
+                const size = pageSizes[page];
+                return (
+                  <div
+                    key={`original-${page}`}
+                    className="pdf-ocr-paper pdf-ocr-paper--original"
+                    data-ocr-page={page}
+                    style={
+                      size
+                        ? undefined
+                        : { minHeight: "28rem", width: "min(36rem, 100%)" }
+                    }
+                  >
+                    {preview ? (
+                      <img
+                        src={preview}
+                        alt={`Pàgina ${page}`}
+                        draggable={false}
+                      />
+                    ) : (
+                      <p className="empty-state" style={{ padding: "1.5rem" }}>
+                        Carregant pàgina {page}…
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
 
-        <section className="pdf-ocr-workspace-pane" aria-label="Text traduït">
+        <section
+          className="pdf-ocr-workspace-pane"
+          aria-label="Document traduït"
+        >
           <h4 className="pdf-ocr-workspace-pane-title">
             Traducció ({packSourceLanguage} → {targetLanguage})
           </h4>
-          <div className="pdf-ocr-doc-stage">
-            <div
-              className={`pdf-ocr-paper pdf-ocr-paper--translation${
-                currentResult ? " pdf-ocr-paper--on-scan" : ""
-              }`}
-              style={{ aspectRatio: String(aspectRatio), zoom }}
-              lang={targetLanguage}
-              dir={targetLanguage === "ar" ? "rtl" : "ltr"}
-            >
-              {currentResult && (
-                <img
-                  className="pdf-ocr-page-bg"
-                  src={currentResult.backgroundUrl}
-                  alt=""
-                  draggable={false}
-                />
-              )}
+          <div className="pdf-ocr-doc-stage" ref={translationStageRef}>
+            <div className="pdf-ocr-doc-stack" style={{ zoom }}>
+              {pageIndexes.map((page) => {
+                const result = pageResults[page] ?? null;
+                const paragraphs = splitDocumentBlocks(
+                  (result?.plainParagraphs ?? []).join("\n\n"),
+                );
 
-              {currentResult && currentResult.lines.length > 0 ? (
-                <div className="pdf-ocr-page-layout">
-                  {currentResult.lines.map((line, index) => (
-                    <FittingOcrTranslatedLine
-                      key={`${index}-${line.bbox.y0}-${line.bbox.x0}`}
-                      text={line.translated}
-                      title={line.text}
-                      bbox={line.bbox}
-                      layoutW={layoutW}
-                      layoutH={layoutH}
-                    />
-                  ))}
-                </div>
-              ) : currentResult && currentResult.plainParagraphs.length > 0 ? (
-                <div className="pdf-ocr-page-plain pdf-ocr-page-plain--on-scan">
-                  {currentResult.plainParagraphs.map((para, index) => (
-                    <p key={`${index}-${para.slice(0, 32)}`}>{para}</p>
-                  ))}
-                </div>
-              ) : (
-                <p
-                  className="empty-state"
-                  style={{ padding: "1.5rem", position: "relative" }}
-                >
-                  {busy
-                    ? "Generant traducció de tot el document…"
-                    : "Premeu «Traduir» per traduir totes les pàgines sobre el fons original."}
-                </p>
-              )}
+                return (
+                  <div
+                    key={`translation-${page}`}
+                    className="pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--plain-view"
+                    data-ocr-page={page}
+                    lang={targetLanguage}
+                    dir={targetLanguage === "ar" ? "rtl" : "ltr"}
+                  >
+                    {paragraphs.length > 0 ? (
+                      <div className="pdf-ocr-page-plain">
+                        {paragraphs.map((para, index) => (
+                          <p key={`${page}-${index}-${para.slice(0, 32)}`}>
+                            {para}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p
+                        className="empty-state"
+                        style={{ padding: "1.5rem", position: "relative" }}
+                      >
+                        {busy
+                          ? `Generant traducció… (pàg. ${page})`
+                          : page === 1
+                            ? "Premeu «Traduir» per traduir totes les pàgines."
+                            : `Pàgina ${page}`}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>

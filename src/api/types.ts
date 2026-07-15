@@ -6,6 +6,13 @@ export interface ApiEnvelope<T> {
   data: T;
 }
 
+export interface TranslatedPage {
+  /** 1-based, aligned with PDF page numbers */
+  page: number;
+  /** Translated text for that page only (may be "") */
+  text: string;
+}
+
 export interface DocumentOut {
   id: number;
   status: string | null;
@@ -23,8 +30,14 @@ export interface DocumentOut {
   target_folder: string | null;
   /** Relative storage path of the matched original when status is repeated. */
   duplicate_path?: string | null;
-  /** Full-document translation stored on the document (no on-demand translate call). */
+  /** Full-document translation (backward compatible). */
   translated_text?: string | null;
+  translated_at?: string | null;
+  /**
+   * Per-page translations. Null/omitted on older docs → fall back to
+   * single-scroll view using translated_text only.
+   */
+  translated_pages?: TranslatedPage[] | null;
   language: string | null;
   sender: string | null;
   recipient: string | null;
@@ -74,6 +87,7 @@ export interface DocumentTranslateResponse {
   target_language: string;
   original_text: string;
   translated_text: string;
+  translated_pages?: TranslatedPage[] | null;
 }
 
 export interface DocumentRestoreRequest {

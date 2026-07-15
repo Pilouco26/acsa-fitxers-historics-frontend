@@ -171,17 +171,17 @@ export function PdfPreview({
     >
       {loading && <p className="empty-state">Carregant PDF…</p>}
 
-      {!loading && showPageTranslateButton && (
+      {!loading && showPageTranslateButton && !pageTranslateOpen && (
         <div className="pdf-preview-toolbar">
           <button
             type="button"
-            className={`btn btn-sm ${pageTranslateOpen ? "btn-primary" : "btn-secondary"}`}
-            aria-pressed={pageTranslateOpen}
+            className="btn btn-sm btn-secondary"
+            aria-pressed={false}
             disabled={!objectUrl}
             title="Traduir la pàgina actual (resultat al costat)"
-            onClick={() => setPageTranslateOpen(!pageTranslateOpen)}
+            onClick={() => setPageTranslateOpen(true)}
           >
-            {pageTranslateOpen ? "Tancar traducció" : "Traduir pàgina"}
+            Traduir pàgina
           </button>
         </div>
       )}

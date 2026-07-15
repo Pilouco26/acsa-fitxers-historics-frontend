@@ -1093,6 +1093,90 @@ select {
   width: min(100%, 42rem);
 }
 
+.backend-translate-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.backend-translate-page {
+  position: relative;
+  min-height: auto;
+  aspect-ratio: auto;
+}
+
+.backend-translate-page-label {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.85rem;
+  z-index: 2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.backend-translate-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.backend-translate-letter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: clamp(1.25rem, 4vw, 2rem) clamp(1.25rem, 4.5vw, 2.25rem);
+}
+
+.backend-translate-letter .pdf-ocr-page-plain {
+  padding: 0;
+}
+
+.backend-translate-letter-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.backend-translate-letter-section--meta {
+  opacity: 0.88;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(70, 55, 30, 0.12);
+}
+
+.backend-translate-letter-section--meta .pdf-ocr-page-plain {
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+}
+
+.backend-translate-letter-section--primary {
+  padding-top: 0.15rem;
+}
+
+.backend-translate-letter-section--primary .backend-translate-letter-label {
+  color: var(--color-text);
+}
+
+.backend-translate-letter-section--primary .pdf-ocr-page-plain {
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
 .split-detail-compare {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1253,9 +1337,38 @@ select {
 }
 
 .pdf-ocr-workspace-lang select {
-  min-width: 4.25rem;
-  padding: 0.2rem 0.35rem;
+  min-width: 8.5rem;
+  max-width: 12rem;
+  padding: 0.25rem 1.5rem 0.25rem 0.625rem;
   font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236e6e73' d='M1.4.6 6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+  cursor: pointer;
+  appearance: none;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.pdf-ocr-workspace-lang select:hover:not(:disabled) {
+  background-color: var(--color-border-light);
+}
+
+.pdf-ocr-workspace-lang select:focus {
+  outline: 2px solid rgba(var(--color-accent-rgb), 0.35);
+  outline-offset: 0;
+  border-color: var(--color-accent);
+}
+
+.pdf-ocr-workspace-lang select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pdf-ocr-workspace-zoom {
@@ -1279,7 +1392,13 @@ select {
 
 .pdf-ocr-workspace-status {
   margin: 0;
-  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pdf-ocr-workspace-panes {
@@ -1315,10 +1434,20 @@ select {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
+.pdf-ocr-doc-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  width: max-content;
+  min-width: 100%;
+  margin: 0 auto;
+}
+
 .pdf-ocr-paper {
   position: relative;
   width: min(100%, 42rem);
-  margin: 0 auto;
+  margin: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 28%),
     #f7f2e7;
@@ -1335,7 +1464,8 @@ select {
   line-height: 0;
 }
 
-.pdf-ocr-paper--original canvas {
+.pdf-ocr-paper--original canvas,
+.pdf-ocr-paper--original img {
   display: block;
   width: min(36rem, 100%);
   height: auto;
@@ -1417,7 +1547,7 @@ select {
 }
 
 .pdf-ocr-page-plain p {
-  margin: 0 0 1.1em;
+  margin: 0 0 1.35em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
