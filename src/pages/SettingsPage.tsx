@@ -15,7 +15,7 @@ export function SettingsPage() {
   const [outputFolder, setOutputFolder] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [geminiKeyBackup, setGeminiKeyBackup] = useState("");
-  const [geminiModel, setGeminiModel] = useState(DEFAULT_GEMINI_MODEL);
+  const [geminiModel, setGeminiModel] = useState<string>(DEFAULT_GEMINI_MODEL);
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings"],
