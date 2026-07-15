@@ -1,6 +1,22 @@
 server {
     listen 80;
-    server_name localhost;
+    server_name _;
+
+    # Prefer HTTPS so Chrome exposes Translator (secure context) on LAN IPs.
+    # HTTPS_EXTERNAL_PORT is substituted at container start (host-mapped TLS port).
+    return 301 https://$host:${HTTPS_EXTERNAL_PORT}$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_protocols       TLSv1.2 TLSv1.3;
 
     root /usr/share/nginx/html;
     index index.html;
@@ -9,6 +25,27 @@ server {
 
     # Resolve upstream at request time so nginx starts even if the API is down.
     resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # Hashed Vite assets: never fall back to index.html (breaks ES module workers).
+    # Explicit types so .mjs is application/javascript (pdf.js worker dynamic import).
+    location ^~ /assets/ {
+        try_files $uri =404;
+        types {
+            application/javascript mjs js;
+            text/css               css;
+            application/wasm       wasm;
+            image/svg+xml          svg svgz;
+            font/woff2             woff2;
+            font/woff              woff;
+            application/json       json;
+            image/png              png;
+            image/jpeg             jpg jpeg;
+            image/webp             webp;
+            image/gif              gif;
+            text/plain             map txt;
+        }
+        default_type application/octet-stream;
+    }
 
     location /api {
         set $upstream ${API_UPSTREAM};
