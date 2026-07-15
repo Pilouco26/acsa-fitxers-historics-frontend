@@ -8,6 +8,7 @@ import {
   updateDocument,
 } from "@/api/client";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
+import { BackendDocumentTranslatePanel } from "@/components/BackendDocumentTranslatePanel";
 import { PageHeader } from "@/components/PageHeader";
 import {
   PdfPreview,
@@ -61,6 +62,8 @@ export function RevisioPage() {
   const [previewRotation, setPreviewRotation] = useState(0);
   const [originalRotation, setOriginalRotation] = useState(0);
   const [compareOriginal, setCompareOriginal] = useState(false);
+  const [translateOpen, setTranslateOpen] = useState(false);
+  const [pageTranslateOpen, setPageTranslateOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const listCardRef = useRef<HTMLDivElement>(null);
@@ -188,6 +191,8 @@ export function RevisioPage() {
     setDetailOpen(true);
     setCompareOriginal(false);
     setOriginalRotation(0);
+    setTranslateOpen(false);
+    setPageTranslateOpen(false);
     setError(null);
   }
 
@@ -195,6 +200,8 @@ export function RevisioPage() {
     setPreviewRotation(0);
     setOriginalRotation(0);
     setCompareOriginal(false);
+    setTranslateOpen(false);
+    setPageTranslateOpen(false);
   }, [selected?.id]);
 
   function rotatePreview() {
@@ -221,6 +228,7 @@ export function RevisioPage() {
       setPreviewRotation(0);
       setOriginalRotation(0);
       setCompareOriginal(false);
+      setTranslateOpen(false);
     });
 
     // Catch any preview still registered after unmount (useLayoutEffect cleanup).
@@ -243,12 +251,17 @@ export function RevisioPage() {
     }
   }
 
+  const translateFocusOpen = translateOpen || pageTranslateOpen;
+
   const splitClassName = [
     "split-view",
     !detailVisible && "split-view--auto",
     !detailVisible && "split-view--collapsed",
     detailVisible && "split-view--detail-open",
     showOriginalCompare && "split-view--compare",
+    detailVisible && translateOpen && !pageTranslateOpen && "split-view--translate-open",
+    detailVisible && translateFocusOpen && "split-view--translate-focus",
+    detailVisible && pageTranslateOpen && "split-view--page-translate-open",
   ]
     .filter(Boolean)
     .join(" ");
@@ -363,7 +376,12 @@ export function RevisioPage() {
           <button
             type="button"
             className="split-detail-toggle"
-            onClick={() => setDetailOpen((open) => !open)}
+            onClick={() => {
+              setDetailOpen((open) => {
+                if (open) setTranslateOpen(false);
+                return !open;
+              });
+            }}
             disabled={!selected}
             aria-expanded={detailVisible}
             aria-label={detailVisible ? "Tancar panell" : "Obrir panell"}
@@ -374,6 +392,7 @@ export function RevisioPage() {
 
         {detailVisible && selected && (
           <>
+            {!translateFocusOpen && (
             <div className="card card-panel split-detail-edit">
               <h3 className="card-title">Editar document</h3>
 
@@ -444,15 +463,38 @@ export function RevisioPage() {
                 />
               </div>
             </div>
+            )}
 
             <div className="card card-panel split-detail-preview">
-              {showOriginalCompare && duplicatePath ? (
+              {showOriginalCompare && duplicatePath && !pageTranslateOpen ? (
                 <div className="split-detail-compare">
                   <div className="split-detail-compare-pane">
                     <div className="toolbar-row" style={{ marginBottom: 0 }}>
                       <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
                         Aquest document
                       </h3>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${translateOpen ? "btn-primary" : "btn-secondary"}`}
+                        aria-pressed={translateOpen}
+                        title="Mostrar el text traduït del document (resultat al costat)"
+                        onClick={() => setTranslateOpen((open) => !open)}
+                      >
+                        {translateOpen ? "Tancar traducció" : "Traduir"}
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${pageTranslateOpen ? "btn-primary" : "btn-secondary"}`}
+                        aria-pressed={pageTranslateOpen}
+                        title="Traduir la pàgina actual (resultat al costat)"
+                        onClick={() => {
+                          const next = !pageTranslateOpen;
+                          setPageTranslateOpen(next);
+                          if (next) setTranslateOpen(false);
+                        }}
+                      >
+                        Traduir pàgina
+                      </button>
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -467,6 +509,13 @@ export function RevisioPage() {
                       documentId={selected.id}
                       title={selected.proposed_name ?? selected.original_name ?? "PDF"}
                       rotation={previewRotation}
+                      documentLanguage={selected.language}
+                      pageTranslateOpen={pageTranslateOpen}
+                      onPageTranslateOpenChange={(open) => {
+                        setPageTranslateOpen(open);
+                        if (open) setTranslateOpen(false);
+                      }}
+                      showPageTranslateButton={false}
                     />
                   </div>
                   <div className="split-detail-compare-pane">
@@ -499,9 +548,36 @@ export function RevisioPage() {
                     </h3>
                     <button
                       type="button"
+                      className={`btn btn-sm ${translateOpen ? "btn-primary" : "btn-secondary"}`}
+                      aria-pressed={translateOpen}
+                      title="Mostrar el text traduït del document (resultat al costat)"
+                      onClick={() => {
+                        const next = !translateOpen;
+                        setTranslateOpen(next);
+                        if (next) setPageTranslateOpen(false);
+                      }}
+                    >
+                      {translateOpen ? "Tancar traducció" : "Traduir"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${pageTranslateOpen ? "btn-primary" : "btn-secondary"}`}
+                      aria-pressed={pageTranslateOpen}
+                      title="Traduir la pàgina actual (resultat al costat)"
+                      onClick={() => {
+                        const next = !pageTranslateOpen;
+                        setPageTranslateOpen(next);
+                        if (next) setTranslateOpen(false);
+                      }}
+                    >
+                      {pageTranslateOpen ? "Tancar traducció" : "Traduir pàgina"}
+                    </button>
+                    <button
+                      type="button"
                       className="btn btn-secondary btn-sm"
                       onClick={rotatePreview}
                       title="Rotar 90°"
+                      disabled={pageTranslateOpen}
                     >
                       Rotar
                     </button>
@@ -513,10 +589,24 @@ export function RevisioPage() {
                     documentId={selected.id}
                     title={selected.proposed_name ?? selected.original_name ?? "PDF"}
                     rotation={previewRotation}
+                    documentLanguage={selected.language}
+                    pageTranslateOpen={pageTranslateOpen}
+                    onPageTranslateOpenChange={(open) => {
+                      setPageTranslateOpen(open);
+                      if (open) setTranslateOpen(false);
+                    }}
+                    showPageTranslateButton={false}
                   />
                 </>
               )}
             </div>
+
+            <BackendDocumentTranslatePanel
+              translatedText={selected.translated_text}
+              documentLanguage={selected.language}
+              open={translateOpen && !pageTranslateOpen}
+              onClose={() => setTranslateOpen(false)}
+            />
           </>
         )}
       </div>

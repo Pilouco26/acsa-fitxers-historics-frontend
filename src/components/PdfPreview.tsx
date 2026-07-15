@@ -1,5 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { buildHeaders, documentFileUrl, storedFileUrl } from "@/api/client";
+import { PdfOcrTranslateWorkspace } from "@/components/PdfOcrTranslateWorkspace";
+import type { TranslateLanguageCode } from "@/constants/translateLanguages";
 
 const activeReleases = new Map<string, () => void>();
 
@@ -33,22 +35,51 @@ async function releasePreviewKey(key: string): Promise<void> {
   await nextFrame();
 }
 
+/**
+ * PDF file preview. Page OCR translation is handled by `PdfOcrTranslateWorkspace`
+ * (client-side), distinct from backend `translated_text` (`BackendDocumentTranslatePanel`).
+ */
 export function PdfPreview({
   documentId,
   filePath,
   title,
   rotation = 0,
+  documentLanguage,
+  defaultOcrTargetLanguage,
+  pageTranslateOpen: pageTranslateOpenProp,
+  onPageTranslateOpenChange,
+  showPageTranslateButton = true,
 }: {
   documentId?: number | null;
   /** Storage-relative path (e.g. document `duplicate_path`). */
   filePath?: string | null;
   title: string;
   rotation?: number;
+  /** Document metadata `language` (e.g. "fr") used as Origen for page translate. */
+  documentLanguage?: string | null;
+  defaultOcrTargetLanguage?: TranslateLanguageCode | null;
+  /** Controlled page-translate (OCR) mode. When set, parent owns open state. */
+  pageTranslateOpen?: boolean;
+  onPageTranslateOpenChange?: (open: boolean) => void;
+  /**
+   * Show the in-preview "Traduir pàgina" button.
+   * Set false when the parent toolbar hosts the control (e.g. Documents page).
+   */
+  showPageTranslateButton?: boolean;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+
+  const controlled = pageTranslateOpenProp !== undefined;
+  const pageTranslateOpen = controlled ? pageTranslateOpenProp : uncontrolledOpen;
+
+  function setPageTranslateOpen(open: boolean) {
+    if (!controlled) setUncontrolledOpen(open);
+    onPageTranslateOpenChange?.(open);
+  }
 
   const sourceUrl = useMemo(() => {
     if (filePath) return storedFileUrl(filePath);
@@ -60,7 +91,6 @@ export function PdfPreview({
 
   const iframeSrc = useMemo(() => {
     if (!objectUrl) return null;
-    // Hide built-in PDF viewer UI when supported by browser/plugin.
     return `${objectUrl}#toolbar=0&navpanes=0&scrollbar=0`;
   }, [objectUrl]);
 
@@ -99,6 +129,8 @@ export function PdfPreview({
     setLoading(true);
     setError(null);
     setObjectUrl(null);
+    if (!controlled) setUncontrolledOpen(false);
+    onPageTranslateOpenChange?.(false);
 
     fetch(sourceUrl, {
       headers: buildHeaders(),
@@ -127,34 +159,66 @@ export function PdfPreview({
       activeReleases.delete(cacheKey);
       release();
     };
-  }, [cacheKey, sourceUrl]);
+  }, [cacheKey, sourceUrl]); // reset page-translate when source changes
 
   if (error) {
     return <div className="alert alert-error">{error}</div>;
   }
 
   return (
-    <>
+    <div
+      className={`pdf-preview-shell ${pageTranslateOpen ? "pdf-preview-shell--ocr" : ""}`}
+    >
       {loading && <p className="empty-state">Carregant PDF…</p>}
-      <div className="pdf-preview-frame" aria-busy={loading} aria-label={title} hidden={loading}>
-        {iframeSrc && (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              transform: `rotate(${rotationDeg}deg)`,
-              transformOrigin: "center center",
-            }}
+
+      {!loading && showPageTranslateButton && (
+        <div className="pdf-preview-toolbar">
+          <button
+            type="button"
+            className={`btn btn-sm ${pageTranslateOpen ? "btn-primary" : "btn-secondary"}`}
+            aria-pressed={pageTranslateOpen}
+            disabled={!objectUrl}
+            title="Traduir la pàgina actual (resultat al costat)"
+            onClick={() => setPageTranslateOpen(!pageTranslateOpen)}
           >
-            <iframe
-              ref={iframeRef}
-              title={title}
-              src={iframeSrc}
-              style={{ width: "100%", height: "100%", border: 0, display: "block" }}
-            />
-          </div>
-        )}
-      </div>
-    </>
+            {pageTranslateOpen ? "Tancar traducció" : "Traduir pàgina"}
+          </button>
+        </div>
+      )}
+
+      {pageTranslateOpen ? (
+        <PdfOcrTranslateWorkspace
+          objectUrl={objectUrl}
+          open={pageTranslateOpen}
+          documentLanguage={documentLanguage}
+          defaultTargetLanguage={defaultOcrTargetLanguage}
+        />
+      ) : (
+        <div
+          className="pdf-preview-frame"
+          aria-busy={loading}
+          aria-label={title}
+          hidden={loading}
+        >
+          {iframeSrc && (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                transform: `rotate(${rotationDeg}deg)`,
+                transformOrigin: "center center",
+              }}
+            >
+              <iframe
+                ref={iframeRef}
+                title={title}
+                src={iframeSrc}
+                style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -7,11 +7,15 @@ import type {
   AssignResponse,
   BatchUploadOut,
   CompareResponse,
+  DeletedDocumentFilters,
   DocumentFilters,
   DocumentListResponse,
   DocumentMoveRequest,
   DocumentMoveResponse,
   DocumentOut,
+  DocumentRestoreRequest,
+  DocumentTranslateRequest,
+  DocumentTranslateResponse,
   DocumentUpdate,
   EmailAssignRequest,
   EmailAssignResponse,
@@ -218,14 +222,16 @@ export function listDocuments(
 }
 
 export function getDocument(id: number): Promise<DocumentOut> {
-  return request<DocumentOut>(`/documents/${id}`);
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<DocumentOut>(`/documents?${qs}`);
 }
 
 export function updateDocument(
   id: number,
   body: DocumentUpdate,
 ): Promise<DocumentOut> {
-  return request<DocumentOut>(`/documents/${id}`, {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<DocumentOut>(`/documents?${qs}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -233,10 +239,40 @@ export function updateDocument(
 }
 
 export function deleteDocument(id: number): Promise<void> {
+  const qs = new URLSearchParams({ id: String(id) });
   return request<void>(
-    `/documents/${id}`,
+    `/documents?${qs}`,
     { method: "DELETE" },
     { success: "Eliminat", errorPrefix: "Error en eliminar" },
+  );
+}
+
+export function listDeletedDocuments(
+  params: DeletedDocumentFilters = {},
+): Promise<DocumentListResponse> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.limit != null) qs.set("limit", String(params.limit));
+  if (params.offset != null) qs.set("offset", String(params.offset));
+  const query = qs.toString();
+  return request<DocumentListResponse>(
+    `/documents/deleted${query ? `?${query}` : ""}`,
+  );
+}
+
+export function restoreDocument(
+  id: number,
+  body: DocumentRestoreRequest = {},
+): Promise<DocumentOut> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<DocumentOut>(
+    `/documents/restore?${qs}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Recuperat", errorPrefix: "Error en recuperar" },
   );
 }
 
@@ -244,8 +280,9 @@ export function moveDocument(
   id: number,
   body: DocumentMoveRequest,
 ): Promise<DocumentMoveResponse> {
+  const qs = new URLSearchParams({ id: String(id) });
   return request<DocumentMoveResponse>(
-    `/documents/${id}/move`,
+    `/documents/move?${qs}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -255,8 +292,25 @@ export function moveDocument(
   );
 }
 
+export function translateDocument(
+  id: number,
+  body: DocumentTranslateRequest,
+): Promise<DocumentTranslateResponse> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<DocumentTranslateResponse>(
+    `/documents/translate?${qs}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { errorPrefix: "Error en traduir" },
+  );
+}
+
 export function documentFileUrl(id: number): string {
-  return `${BASE}/documents/${id}/file`;
+  const qs = new URLSearchParams({ id: String(id) });
+  return `${BASE}/documents/file?${qs}`;
 }
 
 /** PDF at a storage-relative path (e.g. document `duplicate_path`). */
@@ -276,11 +330,13 @@ export function startAnalyzeJob(body: AnalyzeJobRequest): Promise<JobCreated> {
 }
 
 export function getJob(jobId: string): Promise<JobOut> {
-  return request<JobOut>(`/jobs/${jobId}`);
+  const qs = new URLSearchParams({ id: jobId });
+  return request<JobOut>(`/jobs?${qs}`);
 }
 
 export function cancelJob(jobId: string): Promise<JobOut> {
-  return request<JobOut>(`/jobs/${jobId}`, { method: "DELETE" });
+  const qs = new URLSearchParams({ id: jobId });
+  return request<JobOut>(`/jobs?${qs}`, { method: "DELETE" });
 }
 
 // --- Assign ---
@@ -297,7 +353,8 @@ export function assignDocument(
   id: number,
   body: Pick<AssignRequest, "dest">,
 ): Promise<AssignResponse> {
-  return request<AssignResponse>(`/assign?id=${id}`, {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<AssignResponse>(`/assign?${qs}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -384,11 +441,13 @@ export function listEmails(params: EmailFilters = {}): Promise<EmailListResponse
 }
 
 export function getEmail(id: number): Promise<EmailOut> {
-  return request<EmailOut>(`/emails/${id}`);
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<EmailOut>(`/emails?${qs}`);
 }
 
 export function updateEmail(id: number, body: EmailUpdate): Promise<EmailOut> {
-  return request<EmailOut>(`/emails/${id}`, {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<EmailOut>(`/emails?${qs}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -396,7 +455,8 @@ export function updateEmail(id: number, body: EmailUpdate): Promise<EmailOut> {
 }
 
 export function emailFileUrl(id: number): string {
-  return `${BASE}/emails/${id}/file`;
+  const qs = new URLSearchParams({ id: String(id) });
+  return `${BASE}/emails/file?${qs}`;
 }
 
 export function assignEmails(body: EmailAssignRequest): Promise<EmailAssignResponse> {

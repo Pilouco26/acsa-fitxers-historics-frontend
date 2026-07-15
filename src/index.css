@@ -303,7 +303,8 @@ select {
   justify-content: center;
 }
 
-.card-panel > .pdf-preview-frame {
+.card-panel > .pdf-preview-frame,
+.card-panel > .pdf-preview-shell {
   flex: 1;
   min-height: 0;
 }
@@ -987,7 +988,8 @@ select {
   margin-bottom: 0.75rem;
 }
 
-.preview-collapsible > .pdf-preview-frame {
+.preview-collapsible > .pdf-preview-frame,
+.preview-collapsible > .pdf-preview-shell {
   flex: 1;
   min-height: 0;
 }
@@ -1015,6 +1017,27 @@ select {
   grid-template-columns: auto minmax(16rem, 0.75fr) minmax(0, 1.5fr);
 }
 
+.split-view--detail-open.split-view--page-translate-open {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.split-view--detail-open.split-view--page-translate-open .split-detail-preview {
+  grid-column: 2 / -1;
+}
+
+/* Translation focused: Editar is unmounted (like the list table when detail opens). */
+.split-view--detail-open.split-view--translate-focus:not(.split-view--page-translate-open) {
+  grid-template-columns: auto minmax(0, 1.1fr) minmax(16rem, 0.9fr);
+}
+
+.split-view--detail-open.split-view--translate-open {
+  grid-template-columns: auto minmax(14rem, 0.7fr) minmax(0, 1fr) minmax(16rem, 0.85fr);
+}
+
+.split-view--detail-open.split-view--translate-focus.split-view--translate-open {
+  grid-template-columns: auto minmax(0, 1.1fr) minmax(16rem, 0.9fr);
+}
+
 /* List mode for paginated tables: size to content instead of stretching
    to fill the viewport, so the table never needs an inner scrollbar and
    the pagination bar always sits right below the last row. */
@@ -1028,13 +1051,46 @@ select {
 }
 
 .split-detail-edit,
-.split-detail-preview {
+.split-detail-preview,
+.split-detail-translate {
   min-height: 0;
 }
 
-.split-detail-preview > .pdf-preview-frame {
+.split-detail-preview > .pdf-preview-frame,
+.split-detail-preview > .pdf-preview-shell {
   flex: 1;
   min-height: 0;
+}
+
+.split-detail-translate {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.split-detail-translate-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.split-detail-translate-scroll {
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.75rem;
+  overflow: auto;
+  padding: 0.65rem;
+  border-radius: 0.375rem;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.35), transparent 40%),
+    linear-gradient(145deg, #d8d2c6 0%, #b7aea0 55%, #a89f91 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.split-detail-translate-scroll > .pdf-ocr-paper {
+  width: min(100%, 42rem);
 }
 
 .split-detail-compare {
@@ -1052,7 +1108,8 @@ select {
   min-height: 0;
 }
 
-.split-detail-compare-pane > .pdf-preview-frame {
+.split-detail-compare-pane > .pdf-preview-frame,
+.split-detail-compare-pane > .pdf-preview-shell {
   flex: 1;
   min-height: 0;
 }
@@ -1117,7 +1174,25 @@ select {
 }
 
 /* PDF preview */
+.pdf-preview-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  gap: 0.5rem;
+}
+
+.pdf-preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
 .pdf-preview-frame {
+  position: relative;
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -1138,6 +1213,223 @@ select {
 
 .pdf-preview-frame canvas:last-child {
   margin-bottom: 0;
+}
+
+/* OCR + Chrome translate workspace (side-by-side) */
+.pdf-ocr-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0.5rem;
+}
+
+.pdf-ocr-workspace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pdf-ocr-workspace-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+
+.pdf-ocr-workspace-langs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pdf-ocr-workspace-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.pdf-ocr-workspace-lang select {
+  min-width: 4.25rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.pdf-ocr-workspace-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pdf-ocr-workspace-zoom-label {
+  min-width: 3rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdf-ocr-workspace-view-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pdf-ocr-workspace-status {
+  margin: 0;
+  text-align: left;
+}
+
+.pdf-ocr-workspace-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.pdf-ocr-workspace-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdf-ocr-workspace-pane-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.pdf-ocr-doc-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem;
+  border-radius: var(--radius-sm);
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.35), transparent 40%),
+    linear-gradient(145deg, #d8d2c6 0%, #b7aea0 55%, #a89f91 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.pdf-ocr-paper {
+  position: relative;
+  width: min(100%, 42rem);
+  margin: 0 auto;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 28%),
+    #f7f2e7;
+  border: 1px solid rgba(70, 55, 30, 0.18);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 2px 3px rgba(40, 30, 10, 0.12),
+    0 18px 36px rgba(40, 30, 10, 0.22);
+}
+
+.pdf-ocr-paper--original {
+  width: max-content;
+  max-width: none;
+  line-height: 0;
+}
+
+.pdf-ocr-paper--original canvas {
+  display: block;
+  width: min(36rem, 100%);
+  height: auto;
+}
+
+.pdf-ocr-paper--translation {
+  position: relative;
+  min-height: 32rem;
+  max-width: 42rem;
+}
+
+.pdf-ocr-paper--on-scan {
+  background: #f7f2e7;
+  /* Allow overflow so shrunk lines / slight spill remain scrollable, not clipped */
+  overflow: visible;
+}
+
+.pdf-ocr-paper--plain-view {
+  min-height: auto;
+  aspect-ratio: auto;
+  overflow: visible;
+}
+
+.pdf-ocr-page-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pdf-ocr-page-layout {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.pdf-ocr-page-line {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  line-height: 1.15;
+  color: #1f1a14;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-family:
+    "Segoe UI",
+    "Helvetica Neue",
+    Arial,
+    "Noto Sans",
+    sans-serif;
+  font-stretch: condensed;
+  font-size: 0.75rem;
+  letter-spacing: -0.01em;
+  box-sizing: border-box;
+}
+
+.pdf-ocr-page-plain {
+  position: relative;
+  z-index: 1;
+  padding: clamp(1.25rem, 4vw, 2rem) clamp(1.25rem, 4.5vw, 2.25rem);
+  font-family:
+    "Segoe UI",
+    "Helvetica Neue",
+    Arial,
+    "Noto Sans",
+    sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #1f1a14;
+  letter-spacing: 0;
+}
+
+.pdf-ocr-page-plain--on-scan {
+  background: rgba(247, 242, 231, 0.88);
+}
+
+.pdf-ocr-page-plain p {
+  margin: 0 0 1.1em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pdf-ocr-page-plain p:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .pdf-ocr-workspace-panes {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Card section title */
@@ -1219,6 +1511,11 @@ select {
 
   .split-view--detail-open .split-detail-edit {
     order: 2;
+  }
+
+  .split-view--detail-open .split-detail-translate {
+    order: 4;
+    min-height: 16rem;
   }
 
   .split-view--detail-open .split-detail-preview {

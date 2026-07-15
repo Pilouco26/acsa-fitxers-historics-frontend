@@ -5,7 +5,7 @@ import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
 import logoAcsa from "../../images/Logo_ACSA_02.png";
 
 const mainNav = [
-  { to: "/upload", label: "Escàner" },
+  { to: "/upload", label: "Pujar" },
   { to: "/classificador", label: "Classificador" },
   { to: "/revisio", label: "Revisió" },
   { to: "/documents", label: "Documents" },
@@ -20,6 +20,7 @@ const adminNav = [
   { to: "/admin/analisi", label: "Anàlisi" },
   { to: "/admin/edicions", label: "Edicions" },
   { to: "/correus", label: "Correus" },
+  { to: "/recuperacio", label: "Recuperació" },
 ];
 
 function NavSection({

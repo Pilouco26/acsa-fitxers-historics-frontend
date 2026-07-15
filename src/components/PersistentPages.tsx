@@ -6,6 +6,7 @@ import { ComparadorPage } from "@/pages/ComparadorPage";
 import { CorreusPage } from "@/pages/CorreusPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { EdicionsPage } from "@/pages/EdicionsPage";
+import { RecuperacioPage } from "@/pages/RecuperacioPage";
 import { RevisioPage } from "@/pages/RevisioPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UploadPage } from "@/pages/UploadPage";
@@ -20,9 +21,17 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: "/admin/analisi", element: <AnalisiPage /> },
   { path: "/admin/edicions", element: <EdicionsPage /> },
   { path: "/correus", element: <CorreusPage /> },
+  { path: "/recuperacio", element: <RecuperacioPage /> },
 ];
 
 const KNOWN_PATHS = new Set(ROUTES.map((r) => r.path));
+
+/** Map nested paths (e.g. `/documents/14523`) to their keep-alive page key. */
+function resolveRoutePath(pathname: string): string | null {
+  if (KNOWN_PATHS.has(pathname)) return pathname;
+  if (pathname.startsWith("/documents/")) return "/documents";
+  return null;
+}
 
 /**
  * Keeps visited pages mounted (hidden) so local UI state survives nav changes.
@@ -31,23 +40,25 @@ const KNOWN_PATHS = new Set(ROUTES.map((r) => r.path));
 export function PersistentPages() {
   const location = useLocation();
   const path = location.pathname;
+  const activePath = path === "/" ? "/upload" : resolveRoutePath(path);
 
   const [mounted, setMounted] = useState<Set<string>>(() => {
-    const initial = path === "/" ? "/upload" : path;
-    return KNOWN_PATHS.has(initial) ? new Set([initial]) : new Set();
+    return activePath && KNOWN_PATHS.has(activePath)
+      ? new Set([activePath])
+      : new Set();
   });
 
   useEffect(() => {
-    if (!KNOWN_PATHS.has(path)) return;
+    if (!activePath || !KNOWN_PATHS.has(activePath)) return;
     setMounted((prev) => {
-      if (prev.has(path)) return prev;
+      if (prev.has(activePath)) return prev;
       const next = new Set(prev);
-      next.add(path);
+      next.add(activePath);
       return next;
     });
-  }, [path]);
+  }, [activePath]);
 
-  if (path === "/" || !KNOWN_PATHS.has(path)) {
+  if (!activePath || !KNOWN_PATHS.has(activePath)) {
     return <Navigate to="/upload" replace />;
   }
 
@@ -55,7 +66,7 @@ export function PersistentPages() {
     <>
       {ROUTES.map(({ path: routePath, element }) => {
         if (!mounted.has(routePath)) return null;
-        const active = path === routePath;
+        const active = activePath === routePath;
         return (
           <div
             key={routePath}

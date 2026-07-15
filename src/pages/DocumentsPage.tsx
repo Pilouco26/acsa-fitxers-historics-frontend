@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteDocument, listDocuments, listFolders, moveDocument, updateDocument } from "@/api/client";
+import { useMatch, useNavigate } from "react-router-dom";
+import {
+  deleteDocument,
+  getDocument,
+  listDocuments,
+  listFolders,
+  moveDocument,
+  updateDocument,
+} from "@/api/client";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { FilterAutocompleteInput } from "@/components/FilterAutocompleteInput";
 import { PageHeader } from "@/components/PageHeader";
+import { BackendDocumentTranslatePanel } from "@/components/BackendDocumentTranslatePanel";
 import { PdfPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import {
@@ -38,6 +47,13 @@ function documentFolder(doc: DocumentOut): string {
 
 export function DocumentsPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const documentMatch = useMatch("/documents/:documentId");
+  const routeDocumentParam = documentMatch?.params.documentId;
+  const routeDocumentId =
+    routeDocumentParam != null && /^\d+$/.test(routeDocumentParam)
+      ? Number(routeDocumentParam)
+      : null;
 
   const [search, setSearch] = useState("");
   const [filterFolder, setFilterFolder] = useState("");
@@ -64,6 +80,8 @@ export function DocumentsPage() {
   const [selected, setSelected] = useState<DocumentOut | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewRotation, setPreviewRotation] = useState(0);
+  const [translateOpen, setTranslateOpen] = useState(false);
+  const [pageTranslateOpen, setPageTranslateOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editFolder, setEditFolder] = useState("");
   const listCardRef = useRef<HTMLDivElement>(null);
@@ -220,8 +238,8 @@ export function DocumentsPage() {
     mutationFn: (id: number) => deleteDocument(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
-      setDetailOpen(false);
       setSelected(null);
+      navigate("/documents");
     },
   });
 
@@ -229,6 +247,45 @@ export function DocumentsPage() {
   const total = data?.total ?? 0;
   const totalReady = !isFetching;
   const totalPending = isFetching && items.length > 0;
+
+  const routeDocumentQuery = useQuery({
+    queryKey: ["documents", "detail", routeDocumentId],
+    queryFn: () => getDocument(routeDocumentId!),
+    enabled: routeDocumentId != null,
+  });
+
+  useEffect(() => {
+    if (documentMatch && routeDocumentId == null) {
+      navigate("/documents", { replace: true });
+    }
+  }, [documentMatch, routeDocumentId, navigate]);
+
+  useEffect(() => {
+    if (routeDocumentId == null) {
+      setDetailOpen(false);
+      setTranslateOpen(false);
+      setPageTranslateOpen(false);
+      return;
+    }
+
+    if (routeDocumentQuery.isError) {
+      navigate("/documents", { replace: true });
+      return;
+    }
+
+    const fromList = data?.items?.find((doc) => doc.id === routeDocumentId);
+    const doc = fromList ?? routeDocumentQuery.data;
+    if (!doc) return;
+
+    setSelected((prev) => (prev?.id === doc.id ? prev : doc));
+    setDetailOpen(true);
+  }, [
+    routeDocumentId,
+    data?.items,
+    routeDocumentQuery.data,
+    routeDocumentQuery.isError,
+    navigate,
+  ]);
 
   usePrefetchDocumentListPages({
     enabled: !hasActiveFilters,
@@ -299,11 +356,16 @@ export function DocumentsPage() {
     if (page > maxPage) setPage(maxPage);
   }, [total, page, pageSize]);
 
+  const translateFocusOpen = translateOpen || pageTranslateOpen;
+
   const splitClassName = [
     "split-view",
     !detailVisible && "split-view--auto",
     !detailVisible && "split-view--collapsed",
     detailVisible && "split-view--detail-open",
+    detailVisible && translateOpen && !pageTranslateOpen && "split-view--translate-open",
+    detailVisible && translateFocusOpen && "split-view--translate-focus",
+    detailVisible && pageTranslateOpen && "split-view--page-translate-open",
   ]
     .filter(Boolean)
     .join(" ");
@@ -320,19 +382,25 @@ export function DocumentsPage() {
         : null;
 
   function selectDoc(doc: DocumentOut) {
-    setSelected(doc);
-    setEditName(doc.proposed_name ?? doc.original_name ?? "");
-    setEditFolder(documentFolder(doc));
-    setDetailOpen(true);
+    navigate(`/documents/${doc.id}`);
   }
 
   function toggleDetailPanel() {
     if (!selected) return;
-    setDetailOpen((open) => !open);
+    if (detailOpen) {
+      navigate("/documents");
+      return;
+    }
+    navigate(`/documents/${selected.id}`);
   }
 
   useEffect(() => {
+    if (!selected) return;
+    setEditName(selected.proposed_name ?? selected.original_name ?? "");
+    setEditFolder(documentFolder(selected));
     setPreviewRotation(0);
+    setTranslateOpen(false);
+    setPageTranslateOpen(false);
   }, [selected?.id]);
 
   function rotatePreview() {
@@ -594,6 +662,8 @@ export function DocumentsPage() {
 
         {detailVisible && selected && (
           <>
+            {/* Same pattern as the list table: unmount while translation is focused. */}
+            {!translateFocusOpen && (
             <div className="card card-panel split-detail-edit">
               <h3 className="card-title">Editar document</h3>
 
@@ -640,6 +710,7 @@ export function DocumentsPage() {
                 />
               </div>
             </div>
+            )}
 
             <div className="card card-panel split-detail-preview">
               <div className="toolbar-row" style={{ marginBottom: 0 }}>
@@ -648,9 +719,36 @@ export function DocumentsPage() {
                 </h3>
                 <button
                   type="button"
+                  className={`btn btn-sm ${translateOpen ? "btn-primary" : "btn-secondary"}`}
+                  aria-pressed={translateOpen}
+                  title="Mostrar el text traduït del document (resultat al costat)"
+                  onClick={() => {
+                    const next = !translateOpen;
+                    setTranslateOpen(next);
+                    if (next) setPageTranslateOpen(false);
+                  }}
+                >
+                  {translateOpen ? "Tancar traducció" : "Traduir"}
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${pageTranslateOpen ? "btn-primary" : "btn-secondary"}`}
+                  aria-pressed={pageTranslateOpen}
+                  title="Traduir la pàgina actual (resultat al costat)"
+                  onClick={() => {
+                    const next = !pageTranslateOpen;
+                    setPageTranslateOpen(next);
+                    if (next) setTranslateOpen(false);
+                  }}
+                >
+                  {pageTranslateOpen ? "Tancar traducció" : "Traduir pàgina"}
+                </button>
+                <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={rotatePreview}
                   title="Rotar 90°"
+                  disabled={pageTranslateOpen}
                 >
                   Rotar
                 </button>
@@ -659,8 +757,22 @@ export function DocumentsPage() {
                 documentId={selected.id}
                 title={editName || selected.original_name || "PDF"}
                 rotation={previewRotation}
+                documentLanguage={selected.language}
+                pageTranslateOpen={pageTranslateOpen}
+                onPageTranslateOpenChange={(open) => {
+                  setPageTranslateOpen(open);
+                  if (open) setTranslateOpen(false);
+                }}
+                showPageTranslateButton={false}
               />
             </div>
+
+            <BackendDocumentTranslatePanel
+              translatedText={selected.translated_text}
+              documentLanguage={selected.language}
+              open={translateOpen && !pageTranslateOpen}
+              onClose={() => setTranslateOpen(false)}
+            />
           </>
         )}
       </div>

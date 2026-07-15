@@ -14,11 +14,19 @@ interface FilterAutocompleteInputProps {
   maxSuggestions?: number;
 }
 
+/** Case- and accent-insensitive form for matching (e.g. "Müller" ≈ "muller", "café" ≈ "cafe"). */
+function normalizeForMatch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("ca");
+}
+
 function matchSuggestions(suggestions: string[], value: string): string[] {
-  const query = value.trim().toLocaleLowerCase("ca");
+  const query = normalizeForMatch(value.trim());
   if (!query) return suggestions;
   return suggestions.filter((suggestion) =>
-    suggestion.toLocaleLowerCase("ca").includes(query),
+    normalizeForMatch(suggestion).includes(query),
   );
 }
 
@@ -46,7 +54,11 @@ export function FilterAutocompleteInput({
       ? matchedSuggestions.slice(0, maxSuggestions)
       : matchedSuggestions;
 
-  const showDropdown = open && !disabled && limitedSuggestions.length > 0;
+  const showDropdown =
+    open &&
+    !disabled &&
+    value.trim().length > 0 &&
+    limitedSuggestions.length > 0;
 
   useEffect(() => {
     setHighlightIndex(-1);

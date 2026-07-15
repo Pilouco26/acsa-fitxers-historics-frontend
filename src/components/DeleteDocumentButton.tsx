@@ -25,7 +25,7 @@ export function DeleteDocumentButton({
   async function handleClick() {
     const label = documentLabel(document);
     const ok = window.confirm(
-      `Segur que voleu eliminar "${label}"? Aquesta acció no es pot desfer.`,
+      `Segur que voleu eliminar "${label}"? Es mourà a _DELETED i es podrà recuperar des de Recuperació.`,
     );
     if (!ok) return;
     await onDelete(document);

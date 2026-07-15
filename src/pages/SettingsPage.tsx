@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSettings, updateSettings, ApiError } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
+import {
+  DEFAULT_GEMINI_MODEL,
+  GEMINI_MODEL_OPTIONS,
+} from "@/constants/geminiModels";
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
@@ -11,7 +15,7 @@ export function SettingsPage() {
   const [outputFolder, setOutputFolder] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [geminiKeyBackup, setGeminiKeyBackup] = useState("");
-  const [geminiModel, setGeminiModel] = useState("");
+  const [geminiModel, setGeminiModel] = useState(DEFAULT_GEMINI_MODEL);
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings"],
@@ -22,8 +26,12 @@ export function SettingsPage() {
     if (!data) return;
     setInputFolder(data.input_folder);
     setOutputFolder(data.output_folder);
-    setGeminiModel(data.gemini_model);
+    setGeminiModel(data.gemini_model || DEFAULT_GEMINI_MODEL);
   }, [data]);
+
+  const modelInList = GEMINI_MODEL_OPTIONS.some(
+    (option) => option.value === geminiModel,
+  );
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -121,12 +129,20 @@ export function SettingsPage() {
 
         <div className="field">
           <label htmlFor="gemini-model">Model Gemini</label>
-          <input
+          <select
             id="gemini-model"
             value={geminiModel}
             onChange={(e) => setGeminiModel(e.target.value)}
-            placeholder="gemini-2.5-flash-lite"
-          />
+          >
+            {!modelInList && geminiModel && (
+              <option value={geminiModel}>{geminiModel}</option>
+            )}
+            {GEMINI_MODEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="btn-row">

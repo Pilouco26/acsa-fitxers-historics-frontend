@@ -22,7 +22,7 @@ const fontBold = path.join(
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
-const MARGIN = 28;
+const MARGIN = 24;
 
 const C = {
   ink: "#1d1d1f",
@@ -31,18 +31,19 @@ const C = {
   accent: "#007aff",
   accentDark: "#0056b3",
   surface: "#ffffff",
-  panel: "#f5f5f7",
+  panel: "#f0f2f5",
   border: "#d2d2d7",
-  line: "#e8e8ed",
+  line: "#e5e5ea",
   success: "#248a3d",
-  tipBg: "#eef5ff",
+  tipBg: "#e8f1ff",
+  iconBg: "#e8f1ff",
 };
 
 const STEPS = [
   {
     tab: "Escàner",
     verb: "Pujar",
-    actions: ["Escanegeu en PDF", "Pugeu a la pestanya Escàner"],
+    actions: ["Escanegeu a l'aplicació de l'escàner", "Pugeu el document a la web"],
     icon: "scan",
   },
   {
@@ -85,45 +86,45 @@ function roundedRect(doc, x, y, w, h, r) {
 
 function drawIcon(doc, kind, cx, cy, color) {
   doc.save();
-  doc.strokeColor(color).fillColor(color).lineWidth(2).lineCap("round").lineJoin("round");
+  doc.strokeColor(color).fillColor(color).lineWidth(2.2).lineCap("round").lineJoin("round");
 
   if (kind === "scan") {
-    const s = 11;
-    doc.roundedRect(cx - s, cy - s * 0.75, s * 2, s * 1.5, 2).stroke();
-    doc.moveTo(cx - s - 3, cy - 4).lineTo(cx - s - 3, cy - 8).lineTo(cx - s + 1, cy - 8).stroke();
-    doc.moveTo(cx + s + 3, cy - 4).lineTo(cx + s + 3, cy - 8).lineTo(cx + s - 1, cy - 8).stroke();
-    doc.moveTo(cx - s - 3, cy + 4).lineTo(cx - s - 3, cy + 8).lineTo(cx - s + 1, cy + 8).stroke();
-    doc.moveTo(cx + s + 3, cy + 4).lineTo(cx + s + 3, cy + 8).lineTo(cx + s - 1, cy + 8).stroke();
+    roundedRect(doc, cx - 9, cy - 11, 18, 22, 2);
+    doc.stroke();
+    doc.moveTo(cx - 14, cy - 7).lineTo(cx - 14, cy - 14).lineTo(cx - 7, cy - 14).stroke();
+    doc.moveTo(cx + 14, cy - 7).lineTo(cx + 14, cy - 14).lineTo(cx + 7, cy - 14).stroke();
+    doc.moveTo(cx - 14, cy + 7).lineTo(cx - 14, cy + 14).lineTo(cx - 7, cy + 14).stroke();
+    doc.moveTo(cx + 14, cy + 7).lineTo(cx + 14, cy + 14).lineTo(cx + 7, cy + 14).stroke();
+    doc.moveTo(cx - 6, cy).lineTo(cx + 6, cy).stroke();
   } else if (kind === "ai") {
-    doc.circle(cx, cy, 3).fill(color);
-    for (const [dx, dy] of [
-      [0, -10],
-      [0, 10],
-      [-10, 0],
-      [10, 0],
-      [-7, -7],
-      [7, -7],
-      [-7, 7],
-      [7, 7],
-    ]) {
-      doc.moveTo(cx + dx * 0.35, cy + dy * 0.35).lineTo(cx + dx, cy + dy).stroke();
+    // Spark / burst
+    doc.circle(cx, cy, 3.5).fill(color);
+    const rays = 8;
+    for (let i = 0; i < rays; i++) {
+      const a = (Math.PI * 2 * i) / rays - Math.PI / 2;
+      const inner = 6;
+      const outer = i % 2 === 0 ? 13 : 10;
+      doc
+        .moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner)
+        .lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer)
+        .stroke();
     }
   } else if (kind === "check") {
-    doc.circle(cx, cy, 11).stroke();
+    doc.circle(cx, cy, 13).stroke();
     doc
-      .moveTo(cx - 5, cy)
-      .lineTo(cx - 1, cy + 5)
-      .lineTo(cx + 6, cy - 5)
+      .moveTo(cx - 6, cy + 1)
+      .lineTo(cx - 1.5, cy + 6)
+      .lineTo(cx + 7, cy - 5)
       .stroke();
   } else if (kind === "folder") {
     doc
-      .moveTo(cx - 12, cy - 4)
-      .lineTo(cx - 12, cy - 8)
-      .lineTo(cx - 4, cy - 8)
-      .lineTo(cx - 1, cy - 4)
-      .lineTo(cx + 12, cy - 4)
-      .lineTo(cx + 12, cy + 8)
-      .lineTo(cx - 12, cy + 8)
+      .moveTo(cx - 13, cy - 2)
+      .lineTo(cx - 13, cy - 8)
+      .lineTo(cx - 3, cy - 8)
+      .lineTo(cx + 1, cy - 3)
+      .lineTo(cx + 13, cy - 3)
+      .lineTo(cx + 13, cy + 9)
+      .lineTo(cx - 13, cy + 9)
       .closePath()
       .stroke();
   }
@@ -131,44 +132,40 @@ function drawIcon(doc, kind, cx, cy, color) {
   doc.restore();
 }
 
-function drawChevron(doc, x, y, color = C.accent) {
-  doc.save();
-  doc.strokeColor(color).lineWidth(2).lineCap("round").lineJoin("round");
-  doc
-    .moveTo(x, y - 5)
-    .lineTo(x + 6, y)
-    .lineTo(x, y + 5)
-    .stroke();
-  doc.restore();
-}
-
 function drawFlowBar(doc, x, y, w) {
-  const labels = STEPS.map((s) => s.tab);
-  const n = labels.length;
-  const gap = 10;
-  const segW = (w - gap * (n - 1)) / n;
-  const h = 34;
+  const h = 40;
+  const n = STEPS.length;
+  const pad = 8;
+  const innerW = w - pad * 2;
+  const cellW = innerW / n;
 
-  roundedRect(doc, x, y, w, h, 10);
+  roundedRect(doc, x, y, w, h, 12);
   doc.fill(C.panel);
 
-  labels.forEach((label, i) => {
-    const sx = x + i * (segW + gap);
-    const cx = sx + segW / 2;
-
+  STEPS.forEach((step, i) => {
+    const cx = x + pad + cellW * i + cellW / 2;
+    doc.circle(cx - 28, y + h / 2, 9).fill(C.accent);
     doc
       .font("Bold")
-      .fontSize(8)
-      .fillColor(C.accent)
-      .text(String(i + 1), sx, y + 5, { width: segW, align: "center" });
+      .fontSize(10)
+      .fillColor("#ffffff")
+      .text(String(i + 1), cx - 28 - 9, y + h / 2 - 5, { width: 18, align: "center" });
     doc
       .font("Bold")
-      .fontSize(9)
+      .fontSize(10)
       .fillColor(C.ink)
-      .text(label, sx, y + 17, { width: segW, align: "center" });
+      .text(step.tab, cx - 14, y + h / 2 - 5, { width: cellW / 2 + 20, align: "left" });
 
     if (i < n - 1) {
-      drawChevron(doc, sx + segW + gap / 2 - 3, y + h / 2);
+      const ax = x + pad + cellW * (i + 1) - 6;
+      doc.save();
+      doc.strokeColor(C.accent).lineWidth(1.8).lineCap("round").opacity(0.55);
+      doc
+        .moveTo(ax - 4, y + h / 2 - 4)
+        .lineTo(ax + 2, y + h / 2)
+        .lineTo(ax - 4, y + h / 2 + 4)
+        .stroke();
+      doc.restore();
     }
   });
 
@@ -177,118 +174,138 @@ function drawFlowBar(doc, x, y, w) {
 
 function drawStepCard(doc, step, index, x, y, w, h) {
   const num = index + 1;
+  const pad = 22;
 
-  roundedRect(doc, x, y, w, h, 14);
+  // Shadow
+  roundedRect(doc, x + 1.5, y + 2.5, w, h, 16);
+  doc.fill("#d8d8dc");
+
+  roundedRect(doc, x, y, w, h, 16);
   doc.fillAndStroke(C.surface, C.border);
 
-  // Accent bar on top
+  // Top accent strip
   doc.save();
-  doc.rect(x, y, w, 5).fill(C.accent);
+  doc.rect(x + 1, y + 1, w - 2, 6).fill(C.accent);
+  // Cover bottom of strip with rounded feel via white overlay isn't needed
   doc.restore();
 
-  const pad = 18;
-  const iconY = y + 42;
-  const iconBgR = 22;
-  const iconCx = x + pad + iconBgR;
+  // Icon circle — large, centered-ish at top
+  const iconCy = y + 58;
+  const iconCx = x + w / 2 - 28;
+  const iconR = 28;
+  doc.circle(iconCx, iconCy, iconR).fill(C.iconBg);
+  drawIcon(doc, step.icon, iconCx, iconCy, C.accent);
 
-  doc.circle(iconCx, iconY, iconBgR).fill(C.tipBg);
-  drawIcon(doc, step.icon, iconCx, iconY, C.accent);
-
-  // Number badge
-  const badgeR = 12;
-  const badgeCx = x + w - pad - badgeR;
-  const badgeCy = iconY;
-  doc.circle(badgeCx, badgeCy, badgeR).fill(C.accent);
+  // Number badge — opposite side
+  const badgeR = 16;
+  const badgeCx = x + w / 2 + 36;
+  doc.circle(badgeCx, iconCy, badgeR).fill(C.accent);
   doc
     .font("Bold")
-    .fontSize(13)
+    .fontSize(16)
     .fillColor("#ffffff")
-    .text(String(num), badgeCx - badgeR, badgeCy - 6, {
+    .text(String(num), badgeCx - badgeR, iconCy - 7, {
       width: badgeR * 2,
       align: "center",
     });
 
-  let ty = y + 78;
+  // Title block
+  const titleY = y + 98;
   doc
     .font("Bold")
-    .fontSize(9)
+    .fontSize(10)
     .fillColor(C.accent)
-    .text(step.verb.toUpperCase(), x + pad, ty, { width: w - pad * 2 });
-  ty += 16;
+    .text(step.verb.toUpperCase(), x + pad, titleY, {
+      width: w - pad * 2,
+      align: "center",
+    });
 
   doc
     .font("Bold")
-    .fontSize(16)
+    .fontSize(20)
     .fillColor(C.ink)
-    .text(step.tab, x + pad, ty, { width: w - pad * 2 });
-  ty += 28;
+    .text(step.tab, x + pad, titleY + 16, {
+      width: w - pad * 2,
+      align: "center",
+    });
 
   // Divider
+  const divY = titleY + 48;
+  const divW = 48;
   doc
-    .moveTo(x + pad, ty)
-    .lineTo(x + w - pad, ty)
+    .moveTo(x + (w - divW) / 2, divY)
+    .lineTo(x + (w + divW) / 2, divY)
     .strokeColor(C.line)
-    .lineWidth(1)
+    .lineWidth(2)
     .stroke();
-  ty += 16;
 
-  step.actions.forEach((action) => {
-    doc.circle(x + pad + 4, ty + 6, 3).fill(C.accent);
+  // Actions + footer evenly spaced in the lower half of the card
+  const zoneTop = divY + 20;
+  const zoneBottom = y + h - 20;
+  const slots = step.actions.length + 1;
+  const slotH = (zoneBottom - zoneTop) / slots;
+
+  step.actions.forEach((action, i) => {
+    const ty = zoneTop + slotH * i + slotH / 2 - 8;
+    const bulletX = x + pad + 10;
+    doc.circle(bulletX, ty + 7, 3.5).fill(C.accent);
     doc
       .font("Regular")
-      .fontSize(11)
+      .fontSize(12.5)
       .fillColor(C.ink)
-      .text(action, x + pad + 14, ty, {
-        width: w - pad * 2 - 14,
-        lineGap: 2,
+      .text(action, bulletX + 14, ty, {
+        width: w - pad * 2 - 24,
+        align: "left",
       });
-    ty += 28;
   });
 
+  const footerY = zoneTop + slotH * step.actions.length + slotH / 2 - 8;
   if (index < STEPS.length - 1) {
     doc
       .font("Bold")
-      .fontSize(10)
+      .fontSize(11)
       .fillColor(C.accent)
-      .text(`→ ${STEPS[index + 1].tab}`, x + pad, y + h - 28, {
+      .text(`→  ${STEPS[index + 1].tab}`, x + pad, footerY, {
         width: w - pad * 2,
+        align: "center",
       });
   } else {
     doc
       .font("Bold")
-      .fontSize(10)
+      .fontSize(11)
       .fillColor(C.success)
-      .text("✓ Arxiu final", x + pad, y + h - 28, {
+      .text("Arxiu final", x + pad, footerY, {
         width: w - pad * 2,
+        align: "center",
       });
   }
 }
 
 function drawTips(doc, x, y, w) {
-  const h = 56;
-  roundedRect(doc, x, y, w, h, 12);
+  const h = 64;
+  roundedRect(doc, x, y, w, h, 14);
   doc.fill(C.tipBg);
 
   doc
     .font("Bold")
-    .fontSize(10)
+    .fontSize(11)
     .fillColor(C.accentDark)
-    .text("Consells ràpids", x + 16, y + 10, { width: w - 32 });
+    .text("Consells ràpids", x + 18, y + 12, { width: w - 36 });
 
   const tips = [
     "Només PDF",
     "Sense fitxers nous → Pas 1",
-    "Revisió buida → espereu el Pas 2",
+    "Revisió buida → espereu Pas 2",
   ];
-  const tipW = (w - 32 - 16) / tips.length;
+  const tipW = (w - 36) / tips.length;
   tips.forEach((tip, i) => {
-    const tx = x + 16 + i * (tipW + 8);
-    doc.circle(tx + 4, y + 38, 2.5).fill(C.accent);
+    const tx = x + 18 + i * tipW;
+    doc.circle(tx + 4, y + 42, 3).fill(C.accent);
     doc
       .font("Regular")
-      .fontSize(9)
+      .fontSize(10)
       .fillColor(C.ink)
-      .text(tip, tx + 12, y + 32, { width: tipW - 12 });
+      .text(tip, tx + 12, y + 36, { width: tipW - 16 });
   });
 
   return y + h;
@@ -311,21 +328,21 @@ doc.pipe(stream);
 doc.registerFont("Regular", fontRegular);
 doc.registerFont("Bold", fontBold);
 
-// Soft page background wash
+// Page background
 doc.rect(0, 0, PAGE_W, PAGE_H).fill(C.panel);
 
-// Header band
-doc.rect(0, 0, PAGE_W, 118).fill(C.surface);
-doc.rect(0, 118, PAGE_W, 3).fill(C.accent);
+// Header
+doc.rect(0, 0, PAGE_W, 108).fill(C.surface);
+doc.rect(0, 108, PAGE_W, 4).fill(C.accent);
 
 const contentX = MARGIN;
 const contentW = PAGE_W - MARGIN * 2;
 
 doc
   .font("Bold")
-  .fontSize(20)
+  .fontSize(22)
   .fillColor(C.ink)
-  .text("ACSA — Fitxers històrics", contentX, 28, {
+  .text("ACSA — Fitxers històrics", contentX, 22, {
     width: contentW,
     align: "center",
   });
@@ -333,17 +350,17 @@ doc
   .font("Regular")
   .fontSize(12)
   .fillColor(C.muted)
-  .text("Guia pas a pas del flux principal", contentX, 54, {
+  .text("Guia pas a pas del flux principal", contentX, 48, {
     width: contentW,
     align: "center",
   });
 
-drawFlowBar(doc, contentX, 76, contentW);
+drawFlowBar(doc, contentX, 68, contentW);
 
-// 2×2 cards filling most of the page
-const gridTop = 140;
-const gridBottom = PAGE_H - 110;
-const gap = 14;
+// 2×2 grid — fills the page between header and tips
+const gridTop = 128;
+const gridBottom = PAGE_H - 108;
+const gap = 16;
 const cardW = (contentW - gap) / 2;
 const cardH = (gridBottom - gridTop - gap) / 2;
 
@@ -359,35 +376,13 @@ STEPS.forEach((step, i) => {
   drawStepCard(doc, step, i, cx, cy, cardW, cardH);
 });
 
-// Horizontal arrow between top cards
-{
-  const midY = gridTop + cardH / 2;
-  const ax = contentX + cardW + 2;
-  doc.save();
-  doc.strokeColor(C.accent).lineWidth(1.5).opacity(0.45);
-  doc.moveTo(ax, midY).lineTo(ax + gap - 4, midY).stroke();
-  doc.restore();
-  drawChevron(doc, ax + gap - 8, midY, C.accent);
-}
-
-// Horizontal arrow between bottom cards
-{
-  const midY = gridTop + cardH + gap + cardH / 2;
-  const ax = contentX + cardW + 2;
-  doc.save();
-  doc.strokeColor(C.accent).lineWidth(1.5).opacity(0.45);
-  doc.moveTo(ax, midY).lineTo(ax + gap - 4, midY).stroke();
-  doc.restore();
-  drawChevron(doc, ax + gap - 8, midY, C.accent);
-}
-
 drawTips(doc, contentX, PAGE_H - 92, contentW);
 
 doc
   .font("Regular")
   .fontSize(8)
   .fillColor(C.soft)
-  .text("ACSA — Fitxers històrics · Guia pas a pas", contentX, PAGE_H - 28, {
+  .text("ACSA — Fitxers històrics · Guia pas a pas", contentX, PAGE_H - 22, {
     width: contentW,
     align: "center",
   });
@@ -395,15 +390,26 @@ doc
 doc.end();
 
 stream.on("finish", () => {
-  try {
-    if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
-    fs.renameSync(tmpFile, outFile);
-    console.log(`PDF generat: ${outFile}`);
-  } catch {
-    const fallback = path.join(outDir, "guia-flux-principal-acsa-nou.pdf");
-    fs.renameSync(tmpFile, fallback);
-    console.log(`PDF generat (fitxer original bloquejat): ${fallback}`);
+  const candidates = [
+    outFile,
+    path.join(outDir, "guia-flux-principal-acsa-nou.pdf"),
+    path.join(outDir, "guia-flux-principal-acsa-v2.pdf"),
+  ];
+  for (const dest of candidates) {
+    try {
+      fs.copyFileSync(tmpFile, dest);
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {
+        /* ignore */
+      }
+      console.log(`PDF generat: ${dest}`);
+      return;
+    } catch {
+      /* try next */
+    }
   }
+  console.error(`No s'ha pogut desar el PDF. Fitxer temporal: ${tmpFile}`);
 });
 
 stream.on("error", (err) => {

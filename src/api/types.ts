@@ -23,6 +23,8 @@ export interface DocumentOut {
   target_folder: string | null;
   /** Relative storage path of the matched original when status is repeated. */
   duplicate_path?: string | null;
+  /** Full-document translation stored on the document (no on-demand translate call). */
+  translated_text?: string | null;
   language: string | null;
   sender: string | null;
   recipient: string | null;
@@ -60,6 +62,28 @@ export interface DocumentMoveResponse {
   dry_run: boolean;
   unchanged?: boolean;
   collision_resolved?: boolean;
+}
+
+export interface DocumentTranslateRequest {
+  target_language: string;
+}
+
+export interface DocumentTranslateResponse {
+  document_id: number;
+  source_language: string | null;
+  target_language: string;
+  original_text: string;
+  translated_text: string;
+}
+
+export interface DocumentRestoreRequest {
+  dest_folder?: string | null;
+}
+
+export interface DeletedDocumentFilters {
+  q?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export type DocumentOrderBy = "proposed_name" | "company_folder";

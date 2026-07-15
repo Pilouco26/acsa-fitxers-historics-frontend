@@ -10,15 +10,13 @@ import type { UploadOut } from "@/api/types";
 
 
 
-const SCAN_STEPS = [
+const UPLOAD_STEPS = [
 
-  "Obriu Epson Scan o l'aplicació Escanejar del Windows (menú Inici).",
-
-  "Col·loqueu el document a l'escàner i escanegeu-lo.",
-
-  "Deseu el resultat com a PDF al vostre ordinador.",
+  "Prepareu els documents en format PDF al vostre ordinador.",
 
   "Arrossegueu el PDF aquí o feu clic per seleccionar-lo.",
+
+  "Confirmeu que els fitxers es pugen a la safata d'entrada (_PENDENTS).",
 
 ] as const;
 
@@ -118,9 +116,9 @@ export function UploadPage() {
 
       <PageHeader
 
-        title="Escanejar i pujar documents"
+        title="Pujar documents"
 
-        description="Escanegeu amb Epson Scan (o l'escàner del Windows) i pugeu els PDF a la safata d'entrada (_PENDENTS). No cal instal·lar cap programari addicional d'ACSA."
+        description="Pugeu els PDF a la safata d'entrada."
 
       />
 
@@ -134,11 +132,11 @@ export function UploadPage() {
 
         <div className="card">
 
-          <h3 className="card-title">Com escanejar</h3>
+          <h3 className="card-title">Com pujar documents</h3>
 
           <ol className="scan-steps">
 
-            {SCAN_STEPS.map((step, index) => (
+            {UPLOAD_STEPS.map((step, index) => (
 
               <li key={step}>
 
@@ -154,11 +152,7 @@ export function UploadPage() {
 
           <p className="scan-hint">
 
-            Si no teniu Epson Scan, cerqueu <strong>Escanejar</strong> al menú
-
-            Inici del Windows. Assegureu-vos que el format de sortida és{" "}
-
-            <strong>PDF</strong>.
+            Assegureu-vos que el format dels fitxers és <strong>PDF</strong>.
 
           </p>
 
@@ -174,7 +168,7 @@ export function UploadPage() {
 
         <div className="card">
 
-          <h3 className="card-title">Pujar PDF escanejat</h3>
+          <h3 className="card-title">Pujar PDF</h3>
 
           <div
 
@@ -216,7 +210,7 @@ export function UploadPage() {
 
             <p>
 
-              <strong>Feu clic</strong> o arrossegueu PDFs escanejats aquí
+              <strong>Feu clic</strong> o arrossegueu PDFs aquí
 
             </p>
 
