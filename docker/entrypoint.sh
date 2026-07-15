@@ -5,15 +5,21 @@ export API_UPSTREAM="${API_UPSTREAM:-http://api:8000}"
 export API_KEY="${API_KEY:-}"
 export HTTPS_EXTERNAL_PORT="${HTTPS_EXTERNAL_PORT:-8443}"
 
-CERT_FILE=/etc/nginx/certs/cert.pem
-KEY_FILE=/etc/nginx/certs/key.pem
+CERT_DIR=/etc/nginx/certs
+CERT_FILE="$CERT_DIR/cert.pem"
+KEY_FILE="$CERT_DIR/key.pem"
 
+mkdir -p "$CERT_DIR"
+
+# Self-signed TLS so HTTPS works without host-mounted / mkcert files.
+# Browsers will warn once; after proceeding, isSecureContext is true (Translator API).
 if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
-  echo "ERROR: TLS certs missing. Expected:" >&2
-  echo "  $CERT_FILE" >&2
-  echo "  $KEY_FILE" >&2
-  echo "On the host, run:  powershell -File scripts/setup-mkcert.ps1" >&2
-  exit 1
+  echo "Generating self-signed TLS certificate in $CERT_DIR..."
+  openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
+    -keyout "$KEY_FILE" \
+    -out "$CERT_FILE" \
+    -subj "/CN=acsa-web" \
+    -addext "subjectAltName=DNS:localhost,DNS:acsa-web,IP:127.0.0.1"
 fi
 
 # Runtime config for the SPA (Vite env vars are fixed at image build time).
