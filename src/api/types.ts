@@ -6,11 +6,62 @@ export interface ApiEnvelope<T> {
   data: T;
 }
 
+/** Structured letter roles when the backend returns `segments` instead of labeled `text`. */
+export type TranslatedPageSegmentRole = "header" | "body" | "footer";
+
+export interface TranslatedPageSegment {
+  role: TranslatedPageSegmentRole;
+  text: string;
+}
+
 export interface TranslatedPage {
   /** 1-based, aligned with PDF page numbers */
   page: number;
-  /** Translated text for that page only (may be "") */
+  /**
+   * Translated text for that page only (may be "").
+   * For letters may still contain `[Capçalera…]` / `[Cos…]` / `[Peu…]` markers
+   * when `segments` is absent.
+   */
   text: string;
+  /** Preferred structured layout; when present, frontend skips marker parsing. */
+  segments?: TranslatedPageSegment[] | null;
+}
+
+export type LayoutTextAlign = "left" | "center" | "right" | "justify";
+
+export interface LayoutBBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface LayoutWord {
+  text: string;
+  bbox: LayoutBBox;
+  confidence?: number;
+}
+
+export interface LayoutLine {
+  text: string;
+  translated: string;
+  bbox: LayoutBBox;
+  align?: LayoutTextAlign;
+  fontHeightRatio?: number;
+  fontGroupId?: number;
+  words?: LayoutWord[];
+}
+
+/** Per-page overlay payload from layout-preserving `/documents/translate`. */
+export interface LayoutPage {
+  /** 1-based PDF page index */
+  page: number;
+  width: number;
+  height: number;
+  /** Storage-relative path; resolve via `/files/by-path`. */
+  background_url: string;
+  lines: LayoutLine[];
+  plain_paragraphs?: string[] | null;
 }
 
 export interface DocumentOut {
@@ -38,6 +89,10 @@ export interface DocumentOut {
    * single-scroll view using translated_text only.
    */
   translated_pages?: TranslatedPage[] | null;
+  /** Layout-preserving overlay pages (when previously translated with flag). */
+  layout_pages?: LayoutPage[] | null;
+  /** Storage-relative burn-in PDF path from layout-preserving translate. */
+  layout_pdf_url?: string | null;
   language: string | null;
   sender: string | null;
   recipient: string | null;
@@ -79,6 +134,11 @@ export interface DocumentMoveResponse {
 
 export interface DocumentTranslateRequest {
   target_language: string;
+  /**
+   * When true, backend runs OCR+layout path and returns `layout_pages` /
+   * `layout_pdf_url` (whitened backgrounds + burn-in PDF).
+   */
+  preserve_layout?: boolean;
 }
 
 export interface DocumentTranslateResponse {
@@ -88,6 +148,9 @@ export interface DocumentTranslateResponse {
   original_text: string;
   translated_text: string;
   translated_pages?: TranslatedPage[] | null;
+  layout_pages?: LayoutPage[] | null;
+  /** Storage-relative path to burn-in PDF; resolve via `/files/by-path`. */
+  layout_pdf_url?: string | null;
 }
 
 export interface DocumentRestoreRequest {

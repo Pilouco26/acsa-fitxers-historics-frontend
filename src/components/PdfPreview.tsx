@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { buildHeaders, documentFileUrl, storedFileUrl } from "@/api/client";
+import { PdfLayoutTranslateWorkspace } from "@/components/PdfLayoutTranslateWorkspace";
 import { PdfOcrTranslateWorkspace } from "@/components/PdfOcrTranslateWorkspace";
 import type { TranslateLanguageCode } from "@/constants/translateLanguages";
 
@@ -48,6 +49,8 @@ export function PdfPreview({
   defaultOcrTargetLanguage,
   pageTranslateOpen: pageTranslateOpenProp,
   onPageTranslateOpenChange,
+  layoutTranslateOpen: layoutTranslateOpenProp,
+  onLayoutTranslateOpenChange,
   showPageTranslateButton = true,
 }: {
   documentId?: number | null;
@@ -61,6 +64,9 @@ export function PdfPreview({
   /** Controlled page-translate (OCR) mode. When set, parent owns open state. */
   pageTranslateOpen?: boolean;
   onPageTranslateOpenChange?: (open: boolean) => void;
+  /** Controlled faithful-layout translate (DEV) mode. */
+  layoutTranslateOpen?: boolean;
+  onLayoutTranslateOpenChange?: (open: boolean) => void;
   /**
    * Show the in-preview "Traduir pàgina" button.
    * Set false when the parent toolbar hosts the control (e.g. Documents page).
@@ -72,13 +78,33 @@ export function PdfPreview({
   const [loading, setLoading] = useState(true);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const [uncontrolledLayoutOpen, setUncontrolledLayoutOpen] = useState(false);
 
   const controlled = pageTranslateOpenProp !== undefined;
   const pageTranslateOpen = controlled ? pageTranslateOpenProp : uncontrolledOpen;
+  const layoutControlled = layoutTranslateOpenProp !== undefined;
+  const layoutTranslateOpen = layoutControlled
+    ? layoutTranslateOpenProp
+    : uncontrolledLayoutOpen;
+
+  const anyTranslateOpen = pageTranslateOpen || layoutTranslateOpen;
 
   function setPageTranslateOpen(open: boolean) {
     if (!controlled) setUncontrolledOpen(open);
     onPageTranslateOpenChange?.(open);
+    if (open) {
+      if (!layoutControlled) setUncontrolledLayoutOpen(false);
+      onLayoutTranslateOpenChange?.(false);
+    }
+  }
+
+  function setLayoutTranslateOpen(open: boolean) {
+    if (!layoutControlled) setUncontrolledLayoutOpen(open);
+    onLayoutTranslateOpenChange?.(open);
+    if (open) {
+      if (!controlled) setUncontrolledOpen(false);
+      onPageTranslateOpenChange?.(false);
+    }
   }
 
   const sourceUrl = useMemo(() => {
@@ -131,6 +157,8 @@ export function PdfPreview({
     setObjectUrl(null);
     if (!controlled) setUncontrolledOpen(false);
     onPageTranslateOpenChange?.(false);
+    if (!layoutControlled) setUncontrolledLayoutOpen(false);
+    onLayoutTranslateOpenChange?.(false);
 
     fetch(sourceUrl, {
       headers: buildHeaders(),
@@ -167,11 +195,11 @@ export function PdfPreview({
 
   return (
     <div
-      className={`pdf-preview-shell ${pageTranslateOpen ? "pdf-preview-shell--ocr" : ""}`}
+      className={`pdf-preview-shell ${anyTranslateOpen ? "pdf-preview-shell--ocr" : ""}`}
     >
       {loading && <p className="empty-state">Carregant PDF…</p>}
 
-      {!loading && showPageTranslateButton && !pageTranslateOpen && (
+      {!loading && showPageTranslateButton && !anyTranslateOpen && (
         <div className="pdf-preview-toolbar">
           <button
             type="button"
@@ -183,10 +211,27 @@ export function PdfPreview({
           >
             Traduir pàgina
           </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            aria-pressed={false}
+            disabled={!objectUrl}
+            title="DEV: recrear el layout del PDF amb el text traduït"
+            onClick={() => setLayoutTranslateOpen(true)}
+          >
+            DEV traduir
+          </button>
         </div>
       )}
 
-      {pageTranslateOpen ? (
+      {layoutTranslateOpen ? (
+        <PdfLayoutTranslateWorkspace
+          objectUrl={objectUrl}
+          open={layoutTranslateOpen}
+          documentLanguage={documentLanguage}
+          defaultTargetLanguage={defaultOcrTargetLanguage}
+        />
+      ) : pageTranslateOpen ? (
         <PdfOcrTranslateWorkspace
           objectUrl={objectUrl}
           open={pageTranslateOpen}

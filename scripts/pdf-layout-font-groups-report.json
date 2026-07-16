@@ -1,0 +1,16 @@
+{
+  "state": "ok",
+  "lineCount": 42,
+  "uniqueSizes": [
+    10,
+    10.5,
+    17.5
+  ],
+  "uniqueCount": 3,
+  "fontGroups": 4,
+  "bodyUniqueCount": 2,
+  "bodyUnique": [
+    10,
+    10.5
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "state": "ok",
+  "lineCount": 42,
+  "overflowCount": 2,
+  "overflowRatio": 0.047619047619047616,
+  "jumpHints": [],
+  "uniqueSizes": [
+    10,
+    10.5,
+    17.5
+  ]
+}

@@ -304,7 +304,8 @@ select {
 }
 
 .card-panel > .pdf-preview-frame,
-.card-panel > .pdf-preview-shell {
+.card-panel > .pdf-preview-shell,
+.card-panel > .pdf-ocr-workspace {
   flex: 1;
   min-height: 0;
 }
@@ -1057,7 +1058,8 @@ select {
 }
 
 .split-detail-preview > .pdf-preview-frame,
-.split-detail-preview > .pdf-preview-shell {
+.split-detail-preview > .pdf-preview-shell,
+.split-detail-preview > .pdf-ocr-workspace {
   flex: 1;
   min-height: 0;
 }
@@ -1068,54 +1070,9 @@ select {
   overflow: hidden;
 }
 
-.split-detail-translate-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.split-detail-translate-scroll {
+.split-detail-translate > .pdf-ocr-workspace {
   flex: 1;
   min-height: 0;
-  margin-top: 0.75rem;
-  overflow: auto;
-  padding: 0.65rem;
-  border-radius: 0.375rem;
-  background:
-    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.35), transparent 40%),
-    linear-gradient(145deg, #d8d2c6 0%, #b7aea0 55%, #a89f91 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-
-.split-detail-translate-scroll > .pdf-ocr-paper {
-  width: min(100%, 42rem);
-}
-
-.backend-translate-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.85rem;
-  width: 100%;
-}
-
-.backend-translate-page {
-  position: relative;
-  min-height: auto;
-  aspect-ratio: auto;
-}
-
-.backend-translate-page-label {
-  position: absolute;
-  top: 0.65rem;
-  right: 0.85rem;
-  z-index: 2;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.02em;
 }
 
 .backend-translate-badge {
@@ -1132,11 +1089,48 @@ select {
   vertical-align: middle;
 }
 
-.backend-translate-letter {
+.backend-translate-letterhead-toggle {
+  margin: 0;
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.backend-translate-page--structured {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  padding: clamp(1.25rem, 4vw, 2rem) clamp(1.25rem, 4.5vw, 2.25rem);
+  min-height: 40rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), transparent 20%),
+    #f7f2e7;
+}
+
+.backend-translate-letter {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  /* Default: Capçalera 10% / Cos 80% / Peu 10% */
+  grid-template-rows: 10% 80% 10%;
+  /* No vertical gap/padding: percentages must equal outer height exactly. */
+  gap: 0;
+  padding: 0 clamp(1.25rem, 4.5vw, 2.25rem);
+  box-sizing: border-box;
+}
+
+.backend-translate-letter[data-letter-layout="body"] {
+  grid-template-rows: 1fr;
+}
+
+.backend-translate-letter[data-letter-layout="header-body"] {
+  grid-template-rows: 10% 90%;
+}
+
+.backend-translate-letter[data-letter-layout="body-footer"] {
+  grid-template-rows: 90% 10%;
+}
+
+.backend-translate-letter[data-letter-layout="header-body-footer"] {
+  grid-template-rows: 10% 80% 10%;
 }
 
 .backend-translate-letter .pdf-ocr-page-plain {
@@ -1145,36 +1139,87 @@ select {
 
 .backend-translate-letter-label {
   margin: 0 0 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
+  flex-shrink: 0;
 }
 
 .backend-translate-letter-section--meta {
-  opacity: 0.88;
-  padding-bottom: 0.65rem;
-  border-bottom: 1px solid rgba(70, 55, 30, 0.12);
+  min-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(70, 55, 30, 0.14);
+  background: rgba(255, 255, 255, 0.45);
+  box-sizing: border-box;
 }
 
-.backend-translate-letter-section--meta .pdf-ocr-page-plain {
-  font-size: 0.875rem;
+.backend-translate-letter-section--meta .backend-translate-letter-label {
+  color: #6b6358;
+}
+
+.backend-translate-letter-section--meta .pdf-ocr-page-plain,
+.backend-translate-letter-section--meta .pdf-ocr-page-plain p {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: #5c564c;
   white-space: pre-wrap;
   font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
 }
 
+.backend-translate-letter-section--meta .pdf-ocr-page-plain p {
+  margin: 0 0 0.2em;
+}
+
+.backend-translate-letter-section--meta .pdf-ocr-page-plain p:last-child {
+  margin-bottom: 0;
+}
+
 .backend-translate-letter-section--primary {
-  padding-top: 0.15rem;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.5rem 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .backend-translate-letter-section--primary .backend-translate-letter-label {
-  color: var(--color-text);
+  color: #1f1a14;
+  font-size: 0.75rem;
+}
+
+.backend-translate-letter-section--primary .pdf-ocr-page-plain,
+.backend-translate-letter-section--primary .pdf-ocr-page-plain p {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: #1f1a14;
+  font-family:
+    "Segoe UI",
+    "Helvetica Neue",
+    Arial,
+    "Noto Sans",
+    sans-serif;
 }
 
 .backend-translate-letter-section--primary .pdf-ocr-page-plain {
-  font-size: 0.95rem;
-  line-height: 1.55;
+  flex: 1;
+  min-height: 0;
+}
+
+.backend-translate-letter-section--primary .pdf-ocr-page-plain p,
+.backend-translate-letter-section--primary .pdf-ocr-page-plain--dense p {
+  margin: 0 0 0.2em;
+  white-space: pre-wrap;
+}
+
+.backend-translate-letter-section--primary .pdf-ocr-page-plain p:last-child,
+.backend-translate-letter-section--primary .pdf-ocr-page-plain--dense p:last-child {
+  margin-bottom: 0;
 }
 
 .split-detail-compare {
@@ -1471,6 +1516,33 @@ select {
   height: auto;
 }
 
+.pdf-layout-translate-workspace .pdf-ocr-doc-stage {
+  padding: 0.45rem;
+}
+
+.pdf-layout-translate-workspace .pdf-ocr-doc-stack {
+  width: 100%;
+  min-width: 100%;
+  align-items: stretch;
+}
+
+.pdf-layout-translate-workspace .pdf-ocr-paper--original {
+  width: 100%;
+  max-width: 100%;
+}
+
+.pdf-layout-translate-workspace .pdf-ocr-paper--original img {
+  width: 100%;
+  height: auto;
+}
+
+.pdf-layout-translate-workspace .pdf-ocr-paper--translation,
+.pdf-layout-translate-workspace .pdf-ocr-paper--on-scan {
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+}
+
 .pdf-ocr-paper--translation {
   position: relative;
   min-height: 32rem;
@@ -1478,9 +1550,16 @@ select {
 }
 
 .pdf-ocr-paper--on-scan {
+  position: relative;
+  aspect-ratio: auto;
   background: #f7f2e7;
-  /* Allow overflow so shrunk lines / slight spill remain scrollable, not clipped */
-  overflow: visible;
+  /* Clip text to page; lines use % coords matching the scan */
+  overflow: hidden;
+}
+
+.pdf-ocr-paper--on-scan > .pdf-ocr-page-bg {
+  position: absolute;
+  inset: 0;
 }
 
 .pdf-ocr-paper--plain-view {
@@ -1509,21 +1588,43 @@ select {
   position: absolute;
   margin: 0;
   padding: 0;
-  line-height: 1.15;
-  color: #1f1a14;
-  white-space: normal;
+  line-height: 1.0;
+  color: #1a1510;
+  white-space: nowrap;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  text-overflow: clip;
+  overflow-wrap: normal;
   font-family:
-    "Segoe UI",
-    "Helvetica Neue",
-    Arial,
-    "Noto Sans",
-    sans-serif;
-  font-stretch: condensed;
-  font-size: 0.75rem;
-  letter-spacing: -0.01em;
+    "Times New Roman",
+    "Liberation Serif",
+    "Noto Serif",
+    Georgia,
+    serif;
+  font-stretch: normal;
+  font-size: 12px;
+  letter-spacing: 0;
   box-sizing: border-box;
+  text-align: left;
+}
+
+.pdf-ocr-page-line--justify,
+.pdf-ocr-page-line--left {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.05;
+}
+
+.pdf-ocr-page-line--center {
+  text-align: center;
+}
+
+.pdf-ocr-page-line--right {
+  text-align: right;
+}
+
+.pdf-ocr-page-line--justify {
+  text-align: justify;
+  text-align-last: left;
 }
 
 .pdf-ocr-page-plain {

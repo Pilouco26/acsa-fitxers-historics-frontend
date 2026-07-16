@@ -1,9 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import {
-  PageLetterContent,
-  PagePlainContent,
-} from "@/components/LetterTranslateContent";
+import { FittingOcrTranslatedLine } from "@/components/FittingOcrTranslatedLine";
 import {
   createBrowserTranslator,
   getTranslatorAvailability,
@@ -11,7 +8,6 @@ import {
   translateWithBrowserTranslator,
 } from "@/utils/browserTranslate";
 import { openPdfDocument, renderPdfPageToCanvas } from "@/utils/pdfDocument";
-import { resolveOcrLetterSections } from "@/utils/letterSections";
 import {
   ocrAndTranslateCanvas,
   type TranslatedPageResult,
@@ -75,8 +71,8 @@ type Phase =
 
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
-const ZOOM_DEFAULT = 1.5;
 const ZOOM_STEP = 0.1;
+const ZOOM_DEFAULT = 1.5;
 
 function clampZoom(value: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100));
@@ -135,10 +131,11 @@ function scrollStageToPage(stage: HTMLElement, page: number) {
 }
 
 /**
- * Client-side OCR + browser translate for the current PDF preview page.
- * Separate from backend document translation (`BackendDocumentTranslatePanel`).
+ * DEV workspace: recreate PDF page layout with translated text overlaid on a
+ * whitened scan using OCR bboxes, inferred alignment, and line font sizes.
+ * Independent of `PdfOcrTranslateWorkspace` (letter Capçalera/Cos/Peu view).
  */
-export function PdfOcrTranslateWorkspace({
+export function PdfLayoutTranslateWorkspace({
   objectUrl,
   open,
   documentLanguage,
@@ -146,7 +143,6 @@ export function PdfOcrTranslateWorkspace({
 }: {
   objectUrl: string | null;
   open: boolean;
-  /** Classified / metadata language of the source document (e.g. "fr"). */
   documentLanguage?: string | null;
   defaultTargetLanguage?: TranslateLanguageCode | null;
 }) {
@@ -171,8 +167,6 @@ export function PdfOcrTranslateWorkspace({
     Record<number, TranslatedPageResult>
   >({});
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
-  /** Default on so Capçalera / Cos / Peu stay visible when structure is inferred. */
-  const [showLetterhead, setShowLetterhead] = useState(true);
 
   const abortRef = useRef<AbortController | null>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
@@ -183,8 +177,17 @@ export function PdfOcrTranslateWorkspace({
   const scrollToPageRef = useRef<number | null>(null);
   const pageNumberRef = useRef(pageNumber);
   const pagePreviewsRef = useRef<Record<number, string>>({});
+  const autoStartedRef = useRef(false);
+  // Skip one-shot pane-fit; default zoom is 150% (user can still use "Ajustar").
+  const fitAppliedRef = useRef(true);
+  const packSourceLanguageRef = useRef(packSourceLanguage);
+  const targetLanguageRef = useRef(targetLanguage);
+  const zoomRef = useRef(zoom);
 
   pageNumberRef.current = pageNumber;
+  packSourceLanguageRef.current = packSourceLanguage;
+  targetLanguageRef.current = targetLanguage;
+  zoomRef.current = zoom;
 
   const pageIndexes = useMemo(
     () => Array.from({ length: pageCount }, (_, i) => i + 1),
@@ -218,8 +221,10 @@ export function PdfOcrTranslateWorkspace({
     setError(null);
     setPageResults({});
     setZoom(ZOOM_DEFAULT);
-    setShowLetterhead(true);
     scrollToPageRef.current = 1;
+    autoStartedRef.current = false;
+    // Skip auto-fit so the 150% default sticks; user can still use "Ajustar".
+    fitAppliedRef.current = true;
   }, [open, objectUrl, documentLanguage, defaultTargetLanguage]);
 
   useEffect(() => {
@@ -301,6 +306,26 @@ export function PdfOcrTranslateWorkspace({
     if (pdf) void pdf.cleanup();
   }, [open]);
 
+  // Fit page to pane once (like Vista prèvia fill), then leave zoom to the user.
+  useLayoutEffect(() => {
+    if (!open || pageCount < 1 || fitAppliedRef.current) return;
+    const stage = originalStageRef.current;
+    if (!stage) return;
+    const paper = stage.querySelector<HTMLElement>(".pdf-ocr-paper--original");
+    if (!paper || paper.offsetHeight < 32) return;
+
+    const availableW = Math.max(stage.clientWidth - 12, 1);
+    const availableH = Math.max(stage.clientHeight - 12, 1);
+    const currentZoom = Math.max(zoomRef.current, 0.01);
+    const naturalW = paper.offsetWidth / currentZoom;
+    const naturalH = paper.offsetHeight / currentZoom;
+    if (naturalW < 8 || naturalH < 8) return;
+    const fit = Math.min(availableW / naturalW, availableH / naturalH);
+    const next = clampZoom(Math.min(fit * 0.98, ZOOM_MAX));
+    fitAppliedRef.current = true;
+    setZoom(next);
+  }, [open, pageCount, pagePreviews]);
+
   useLayoutEffect(() => {
     if (!open) return;
     const targetPage = scrollToPageRef.current;
@@ -332,7 +357,20 @@ export function PdfOcrTranslateWorkspace({
       }
       e.preventDefault();
       if (e.key === "0") {
-        setZoom(ZOOM_DEFAULT);
+        fitAppliedRef.current = false;
+        const stage = originalStageRef.current;
+        const paper = stage?.querySelector<HTMLElement>(".pdf-ocr-paper--original");
+        if (stage && paper) {
+          const availableW = Math.max(stage.clientWidth - 12, 1);
+          const availableH = Math.max(stage.clientHeight - 12, 1);
+          const naturalW = paper.offsetWidth / Math.max(zoomRef.current, 0.01);
+          const naturalH = paper.offsetHeight / Math.max(zoomRef.current, 0.01);
+          const fit = Math.min(availableW / naturalW, availableH / naturalH);
+          fitAppliedRef.current = true;
+          setZoom(clampZoom(Math.min(fit * 0.98, ZOOM_MAX)));
+        } else {
+          setZoom(ZOOM_DEFAULT);
+        }
         return;
       }
       const delta = e.key === "-" ? -ZOOM_STEP : ZOOM_STEP;
@@ -390,7 +428,8 @@ export function PdfOcrTranslateWorkspace({
       const pages = stage.querySelectorAll<HTMLElement>("[data-ocr-page]");
       if (pages.length === 0) return;
 
-      const stageTop = stage.getBoundingClientRect().top + stage.clientHeight * 0.35;
+      const stageTop =
+        stage.getBoundingClientRect().top + stage.clientHeight * 0.35;
       let bestPage = pageNumberRef.current;
       let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -421,6 +460,9 @@ export function PdfOcrTranslateWorkspace({
   }, [open, pageCount]);
 
   async function runOcrAndTranslateAll() {
+    const sourceLang = packSourceLanguageRef.current;
+    const targetLang = targetLanguageRef.current;
+
     if (!objectUrl) {
       setError("Encara no hi ha cap PDF carregat.");
       setPhase("error");
@@ -433,7 +475,7 @@ export function PdfOcrTranslateWorkspace({
       setPhase("error");
       return;
     }
-    if (packSourceLanguage === targetLanguage) {
+    if (sourceLang === targetLang) {
       setError("L'idioma d'origen i el de destinació han de ser diferents.");
       setPhase("error");
       return;
@@ -449,23 +491,22 @@ export function PdfOcrTranslateWorkspace({
 
       setPhase("preparing-model");
       setStatusMessage(
-        `Preparant la traducció (${packSourceLanguage} → ${targetLanguage})…`,
+        `Preparant la traducció (${sourceLang} → ${targetLang})…`,
       );
       setProgress(0);
       const availability = await getTranslatorAvailability(
-        packSourceLanguage,
-        targetLanguage,
+        sourceLang,
+        targetLang,
       );
       if (availability === "unavailable") {
         throw new Error(
-          `El parell ${packSourceLanguage} → ${targetLanguage} no està disponible al navegador.`,
+          `El parell ${sourceLang} → ${targetLang} no està disponible al navegador.`,
         );
       }
 
-      // Create once while the click gesture is still valid; reuse for every page.
       const translator = await createBrowserTranslator({
-        sourceLanguage: packSourceLanguage,
-        targetLanguage,
+        sourceLanguage: sourceLang,
+        targetLanguage: targetLang,
         onDownloadProgress: (ratio) => setProgress(ratio),
       });
 
@@ -505,8 +546,8 @@ export function PdfOcrTranslateWorkspace({
           setStatusMessage(`Pàgina ${page}/${totalPages}: llegint text…`);
           const pageResult = await ocrAndTranslateCanvas({
             canvas,
-            sourceLanguage: packSourceLanguage,
-            targetLanguage,
+            sourceLanguage: sourceLang,
+            targetLanguage: targetLang,
             signal: ac.signal,
             onOcrProgress: (ratio) =>
               setProgress((page - 1 + ratio * 0.45) / totalPages),
@@ -555,22 +596,25 @@ export function PdfOcrTranslateWorkspace({
     }
   }
 
+  // Start OCR+translate as soon as DEV workspace has a PDF ready.
+  useEffect(() => {
+    if (!open || !supported || !objectUrl) return;
+    if (pageCount < 1 || !pagePreviews[1]) return;
+    if (autoStartedRef.current) return;
+    if (phase !== "idle") return;
+    autoStartedRef.current = true;
+    void runOcrAndTranslateAll();
+  }, [open, supported, objectUrl, pageCount, pagePreviews, phase]);
+
   if (!open) return null;
 
   const busy = busyPhase(phase);
-  const canToggleLetterhead = pageIndexes.some((page) => {
-    const result = pageResults[page];
-    if (!result) return false;
-    const sections = resolveOcrLetterSections({
-      plainParagraphs: result.plainParagraphs,
-      lines: result.lines,
-      pageHeight: result.height,
-    });
-    return Boolean(sections?.some((section) => !section.primary && section.text));
-  });
 
   return (
-    <div className="pdf-ocr-workspace">
+    <div
+      className="pdf-ocr-workspace pdf-layout-translate-workspace"
+      data-layout-translate="true"
+    >
       <div className="pdf-ocr-workspace-toolbar">
         <div className="pdf-ocr-workspace-pager">
           <button
@@ -624,11 +668,29 @@ export function PdfOcrTranslateWorkspace({
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            disabled={busy || zoom === ZOOM_DEFAULT}
-            onClick={() => setZoom(ZOOM_DEFAULT)}
-            title="Zoom per defecte"
+            disabled={busy}
+            onClick={() => {
+              fitAppliedRef.current = false;
+              const stage = originalStageRef.current;
+              const paper = stage?.querySelector<HTMLElement>(
+                ".pdf-ocr-paper--original",
+              );
+              if (stage && paper) {
+                const availableW = Math.max(stage.clientWidth - 12, 1);
+                const availableH = Math.max(stage.clientHeight - 12, 1);
+                const naturalW =
+                  paper.offsetWidth / Math.max(zoomRef.current, 0.01);
+                const naturalH =
+                  paper.offsetHeight / Math.max(zoomRef.current, 0.01);
+                const fit = Math.min(availableW / naturalW, availableH / naturalH);
+                fitAppliedRef.current = true;
+                setZoom(clampZoom(Math.min(fit * 0.98, ZOOM_MAX)));
+              } else {
+                setZoom(ZOOM_DEFAULT);
+              }
+            }}
           >
-            150%
+            Ajustar
           </button>
         </div>
 
@@ -677,18 +739,6 @@ export function PdfOcrTranslateWorkspace({
           {busy ? "Traduint…" : "Traduir"}
         </button>
 
-        {canToggleLetterhead && (
-          <label className="checkbox-label backend-translate-letterhead-toggle">
-            <input
-              type="checkbox"
-              checked={showLetterhead}
-              disabled={busy}
-              onChange={(event) => setShowLetterhead(event.target.checked)}
-            />
-            Mostrar capçalera
-          </label>
-        )}
-
         {statusMessage && (
           <p className="pdf-ocr-workspace-status" aria-live="polite">
             {statusMessage}
@@ -722,7 +772,7 @@ export function PdfOcrTranslateWorkspace({
                     style={
                       size
                         ? undefined
-                        : { minHeight: "28rem", width: "min(36rem, 100%)" }
+                        : { minHeight: "28rem", width: "100%" }
                     }
                   >
                     {preview ? (
@@ -745,41 +795,71 @@ export function PdfOcrTranslateWorkspace({
 
         <section
           className="pdf-ocr-workspace-pane"
-          aria-label="Document traduït"
+          aria-label="Document traduït (layout)"
         >
           <h4 className="pdf-ocr-workspace-pane-title">
-            Traducció ({packSourceLanguage} → {targetLanguage})
+            Traducció layout ({packSourceLanguage} → {targetLanguage})
           </h4>
           <div className="pdf-ocr-doc-stage" ref={translationStageRef}>
             <div className="pdf-ocr-doc-stack" style={{ zoom }}>
               {pageIndexes.map((page) => {
                 const result = pageResults[page] ?? null;
-                const sections = result
-                  ? resolveOcrLetterSections({
-                      plainParagraphs: result.plainParagraphs,
-                      lines: result.lines,
-                      pageHeight: result.height,
-                    })
-                  : null;
-                const plainText = (result?.plainParagraphs ?? []).join("\n\n");
+                const preview = pagePreviews[page];
+                const size = pageSizes[page];
+                const layoutW = result?.width ?? size?.width ?? 1;
+                const layoutH = result?.height ?? size?.height ?? 1;
+                const hasLines = Boolean(result && result.lines.length > 0);
+                const aspectStyle =
+                  size || result
+                    ? {
+                        width: "100%",
+                        aspectRatio: `${layoutW} / ${layoutH}`,
+                      }
+                    : { minHeight: "28rem", width: "100%" };
 
                 return (
                   <div
                     key={`translation-${page}`}
-                    className={`pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--plain-view${
-                      sections ? " backend-translate-page--structured" : ""
-                    }`}
+                    className="pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--on-scan"
                     data-ocr-page={page}
+                    data-layout-page={page}
                     lang={targetLanguage}
                     dir={targetLanguage === "ar" ? "rtl" : "ltr"}
+                    style={aspectStyle}
                   >
-                    {sections ? (
-                      <PageLetterContent
-                        sections={sections}
-                        showLetterhead={showLetterhead}
+                    {hasLines && result ? (
+                      <>
+                        <img
+                          className="pdf-ocr-page-bg"
+                          src={result.backgroundUrl}
+                          alt=""
+                          draggable={false}
+                        />
+                        <div className="pdf-ocr-page-layout">
+                          {result.lines.map((line, index) => (
+                            <FittingOcrTranslatedLine
+                              key={`p${page}-l${index}-${line.bbox.y0}-${line.bbox.x0}`}
+                              text={line.translated}
+                              title={line.text}
+                              bbox={line.bbox}
+                              layoutW={layoutW}
+                              layoutH={layoutH}
+                              align={line.align ?? "left"}
+                              words={line.words}
+                              fontHeightRatio={line.fontHeightRatio}
+                              fontGroupId={line.fontGroupId}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    ) : preview && !busy && phase === "idle" ? (
+                      <img
+                        className="pdf-ocr-page-bg"
+                        src={preview}
+                        alt={`Vista prèvia pàgina ${page}`}
+                        draggable={false}
+                        style={{ opacity: 0.35 }}
                       />
-                    ) : plainText.trim() ? (
-                      <PagePlainContent text={plainText} />
                     ) : (
                       <p
                         className="empty-state"
@@ -788,7 +868,7 @@ export function PdfOcrTranslateWorkspace({
                         {busy
                           ? `Generant traducció… (pàg. ${page})`
                           : page === 1
-                            ? "Premeu «Traduir» per traduir totes les pàgines."
+                            ? "Carregant i traduint el layout…"
                             : `Pàgina ${page}`}
                       </p>
                     )}

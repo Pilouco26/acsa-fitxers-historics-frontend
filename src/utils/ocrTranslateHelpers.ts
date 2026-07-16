@@ -1,6 +1,13 @@
 import { ocrPage, tesseractLangsForIso, type OcrBBox, type OcrLine } from "@/utils/ocrImage";
+import { cleanOcrLinesForLayout } from "@/utils/ocrLineCleanup";
+import { assignOcrFontGroups } from "@/utils/ocrFontGroups";
 
-export type TranslatedOcrLine = OcrLine & { translated: string };
+export type TranslatedOcrLine = OcrLine & {
+  translated: string;
+  /** Median height ratio of the typographic group (page-relative). */
+  fontHeightRatio?: number;
+  fontGroupId?: number;
+};
 
 export type TranslatedPageResult = {
   width: number;
@@ -76,11 +83,19 @@ export function isSoftWrappedContinuation(
   const nextLower = startsWithLowercaseWord(next);
   const nextUpper = startsWithUppercaseWord(next);
 
+  // New sentence / paragraph after terminal punctuation — never soft-join.
+  if (endsWithSentenceBoundary(prev) && nextUpper) return false;
+
   // Mid-sentence wrap with lowercase continuation.
   if (!endsWithSentenceBoundary(prev) && nextLower) return true;
 
-  // Connective left hanging on the previous line (OCR wrap).
-  if (!endsWithSentenceBoundary(prev) && TRAILING_CONNECTIVE.test(prev)) {
+  // Connective left hanging on the previous line (OCR wrap) — only into
+  // lowercase continuations. Uppercase next is a new sentence ("… et" / "De même").
+  if (
+    !endsWithSentenceBoundary(prev) &&
+    TRAILING_CONNECTIVE.test(prev) &&
+    nextLower
+  ) {
     return true;
   }
 
@@ -146,14 +161,14 @@ export function groupLinesIntoParagraphs(
   const medianH =
     heights[Math.floor(heights.length / 2)] ?? Math.max(pageHeight * 0.02, 1);
   /** Gaps below this stay together when text may still be one unit. */
-  const softGap = medianH * 1.45;
+  const softGap = medianH * 1.25;
   /**
    * Beyond this, only keep together when text clearly continues
    * (OCR often inserts a “blank” mid-wrap on aged scans).
    */
-  const hardGap = medianH * 2.75;
+  const hardGap = medianH * 2.2;
   /** Absurd gap → new column / footer / stamp, never join. */
-  const breakGap = medianH * 5.5;
+  const breakGap = medianH * 4.5;
 
   const paragraphs: OcrLine[][] = [];
   let current: OcrLine[] = [sorted[0]];
@@ -162,20 +177,32 @@ export function groupLinesIntoParagraphs(
     const line = sorted[i];
     const gap = line.bbox.y0 - prev.bbox.y1;
     const softWrap = isSoftWrappedContinuation(prev.text, line.text);
+    const newSentence =
+      endsWithSentenceBoundary(prev.text) && startsWithUppercaseWord(line.text);
+    // Indent jump relative to previous line (common at paragraph starts).
+    const prevW = Math.max(prev.bbox.x1 - prev.bbox.x0, 1);
+    const indentJump =
+      line.bbox.x0 - prev.bbox.x0 > Math.max(prevW * 0.12, pageHeight * 0.012);
 
     let startNew = false;
     if (gap > breakGap) {
       startNew = true;
-    } else if (softWrap) {
-      // Mid-sentence / hyphen wrap: keep even across a short blank-looking gap.
+    } else if (newSentence) {
+      // Never pull the next paragraph into the previous translation unit.
+      startNew = true;
+    } else if (softWrap && gap <= hardGap) {
       startNew = false;
     } else if (gap > hardGap) {
       startNew = true;
     } else if (gap > softGap) {
-      // Structural gap after a finished sentence/block → new paragraph.
       startNew = true;
-    } else if (!endsWithSentenceBoundary(prev.text) && startsWithUppercaseWord(line.text)) {
+    } else if (
+      !endsWithSentenceBoundary(prev.text) &&
+      startsWithUppercaseWord(line.text)
+    ) {
       // Tight letterhead / address lines with no mid-sentence wrap.
+      startNew = true;
+    } else if (indentJump && !softWrap && gap > medianH * 0.35) {
       startNew = true;
     }
 
@@ -380,7 +407,14 @@ export function distributeTranslationToLines(
     return [{ ...lines[0], translated: words.join(" ") }];
   }
 
-  const totalChars = lines.reduce((sum, line) => sum + line.text.length, 0);
+  // Capacity ≈ source chars × box width so short wrappers don't steal MT words
+  // that belong on later body lines of the same paragraph.
+  const capacities = lines.map((line) => {
+    const boxW = Math.max(line.bbox.x1 - line.bbox.x0, 1);
+    const boxH = Math.max(line.bbox.y1 - line.bbox.y0, 1);
+    return Math.max(line.text.length, 1) * Math.sqrt(boxW * boxH);
+  });
+  const total = capacities.reduce((sum, c) => sum + c, 0);
   let wordIndex = 0;
   return lines.map((line, index) => {
     const isLast = index === lines.length - 1;
@@ -388,10 +422,11 @@ export function distributeTranslationToLines(
       ? words.length - wordIndex
       : Math.max(
           1,
-          Math.round((line.text.length / Math.max(totalChars, 1)) * words.length),
+          Math.round((capacities[index] / Math.max(total, 1)) * words.length),
         );
-    const piece = words.slice(wordIndex, wordIndex + share).join(" ");
-    wordIndex += share;
+    const capped = Math.min(share, words.length - wordIndex);
+    const piece = words.slice(wordIndex, wordIndex + capped).join(" ");
+    wordIndex += capped;
     return { ...line, translated: piece || line.text };
   });
 }
@@ -429,13 +464,122 @@ function samplePaperFill(
   }
 }
 
+function sampleGlobalPaper(ctx: CanvasRenderingContext2D, w: number, h: number): {
+  r: number;
+  g: number;
+  b: number;
+} {
+  const points = [
+    [w * 0.08, h * 0.06],
+    [w * 0.92, h * 0.06],
+    [w * 0.08, h * 0.94],
+    [w * 0.92, h * 0.94],
+    [w * 0.5, h * 0.5],
+  ];
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (const [px, py] of points) {
+    try {
+      const { data } = ctx.getImageData(Math.floor(px), Math.floor(py), 1, 1);
+      const pr = data[0];
+      const pg = data[1];
+      const pb = data[2];
+      if (pr + pg + pb < 480) continue;
+      r += pr;
+      g += pg;
+      b += pb;
+      n += 1;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (n === 0) return { r: 244, g: 239, b: 230 };
+  return { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) };
+}
+
+type WhiteoutBox = { bbox: OcrBBox; text?: string; translated?: string };
+
+function paintTextBand(
+  ctx: CanvasRenderingContext2D,
+  box: WhiteoutBox,
+  canvasW: number,
+  canvasH: number,
+): void {
+  const boxW = Math.max(1, box.bbox.x1 - box.bbox.x0);
+  const boxH = Math.max(1, box.bbox.y1 - box.bbox.y0);
+  const padX = Math.max(boxW * 0.06, canvasW * 0.008);
+  const padY = Math.max(boxH * 0.45, canvasH * 0.004);
+  const x = Math.max(0, box.bbox.x0 - padX);
+  const y = Math.max(0, box.bbox.y0 - padY);
+  const srcLen = Math.max((box.text ?? "").length, 1);
+  const outLen = Math.max((box.translated ?? box.text ?? "").length, srcLen);
+  const lengthRatio = outLen / srcLen;
+  const widthScale = Math.min(1.85, Math.max(1.15, lengthRatio * 1.08));
+  const w = Math.min(canvasW - x - 1, boxW * widthScale + padX * 2);
+  const h = Math.min(canvasH - y - 1, boxH + padY * 2);
+  ctx.fillStyle = samplePaperFill(ctx, x, y, boxW);
+  ctx.fillRect(x, y, w, h);
+}
+
 /**
- * Clone the scanned page and cover original OCR text regions so translated
- * lines can sit on the same logo / paper / stamps background.
+ * Replace dark, low-chroma ink with paper color while keeping logos / red stamps
+ * (higher chroma). Applied mainly outside the letterhead crest zone.
+ */
+function scrubInkKeepBranding(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
+  let image: ImageData;
+  try {
+    image = ctx.getImageData(0, 0, width, height);
+  } catch {
+    return;
+  }
+  const paper = sampleGlobalPaper(ctx, width, height);
+  const data = image.data;
+  // Protect top branding/logo band from aggressive scrub.
+  const letterheadEnd = Math.floor(height * 0.2);
+
+  for (let y = 0; y < height; y++) {
+    const inLetterhead = y < letterheadEnd;
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const maxc = Math.max(r, g, b);
+      const minc = Math.min(r, g, b);
+      const chroma = maxc - minc;
+      const luma = r * 0.299 + g * 0.587 + b * 0.114;
+
+      // Keep colorful branding / stamps / logos.
+      if (chroma >= (inLetterhead ? 28 : 36)) continue;
+      // Keep paper / light pixels.
+      if (luma >= (inLetterhead ? 150 : 168)) continue;
+
+      // Dark gray/black typewriter ink → paper.
+      // In letterhead, only scrub very dark black so crests survive.
+      if (inLetterhead && luma > 95) continue;
+
+      data[i] = paper.r;
+      data[i + 1] = paper.g;
+      data[i + 2] = paper.b;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
+/**
+ * Clone the scanned page and remove original typing so translated text sits on
+ * clean paper, while logos / crests / colored stamps remain.
  */
 export function buildWhitenedPageBackground(
   source: HTMLCanvasElement,
-  lines: Array<{ bbox: OcrBBox; text: string; translated: string }>,
+  lines: WhiteoutBox[],
+  options?: { coverLines?: WhiteoutBox[] },
 ): string {
   const out = document.createElement("canvas");
   out.width = source.width;
@@ -445,32 +589,36 @@ export function buildWhitenedPageBackground(
 
   ctx.drawImage(source, 0, 0);
 
-  for (const line of lines) {
-    const boxW = Math.max(1, line.bbox.x1 - line.bbox.x0);
-    const boxH = Math.max(1, line.bbox.y1 - line.bbox.y0);
-    const padX = boxW * 0.03;
-    const padY = boxH * 0.22;
-    const x = Math.max(0, line.bbox.x0 - padX);
-    const y = Math.max(0, line.bbox.y0 - padY);
-    const lengthRatio =
-      line.translated.length / Math.max(line.text.length, 1);
-    const widthScale = Math.min(1.65, Math.max(1.1, lengthRatio * 1.05));
-    const w = Math.min(out.width - x - 2, boxW * widthScale + padX * 2);
-    const h = Math.min(out.height - y - 2, boxH + padY * 2);
-
-    ctx.fillStyle = samplePaperFill(ctx, x, y, boxW);
-    ctx.fillRect(x, y, w, h);
+  // Cover every OCR text region (layout lines + raw OCR leftovers).
+  const cover = [...(options?.coverLines ?? []), ...lines];
+  const seen = new Set<string>();
+  for (const line of cover) {
+    const key = `${Math.round(line.bbox.x0)}:${Math.round(line.bbox.y0)}:${Math.round(line.bbox.x1)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    paintTextBand(ctx, line, out.width, out.height);
   }
 
-  return out.toDataURL("image/jpeg", 0.92);
+  // Second pass: scrub remaining black typing, keep colorful branding.
+  scrubInkKeepBranding(ctx, out.width, out.height);
+
+  return out.toDataURL("image/jpeg", 0.9);
 }
 
 /** Filter OCR lines that are likely body text (not noise / full-page headers). */
-export function usableOcrLines(lines: OcrLine[], pageHeight: number): OcrLine[] {
-  return lines.filter((line) => {
-    const h = (line.bbox.y1 - line.bbox.y0) / Math.max(pageHeight, 1);
-    return line.text.length >= 2 && h > 0.004 && h < 0.12;
-  });
+export function usableOcrLines(
+  lines: OcrLine[],
+  pageHeight: number,
+  pageWidth?: number,
+): OcrLine[] {
+  const width =
+    pageWidth ??
+    Math.max(
+      ...lines.map((l) => l.bbox.x1),
+      pageHeight * 0.7,
+      1,
+    );
+  return cleanOcrLinesForLayout(lines, width, pageHeight);
 }
 
 /** OCR one rendered page and translate its paragraphs into positioned lines. */
@@ -501,11 +649,15 @@ export async function ocrAndTranslateCanvas(options: {
     };
   }
 
-  const lines = usableOcrLines(ocr.lines, ocr.height);
-  // Prefer line boxes whenever we have more than one line so soft-wrap merges
-  // still redistribute onto the original layout (even for a single paragraph).
+  const lines = usableOcrLines(ocr.lines, ocr.height, ocr.width);
+  // Smooth per-line OCR height jitter into a few typographic groups.
+  const groupedLines = assignOcrFontGroups(lines, ocr.height);
+  // Prefer line boxes whenever we have OCR geometry so the faithful layout
+  // view can absolute-position translations (including single-line pages).
   const lineParagraphs =
-    lines.length >= 2 ? groupLinesIntoParagraphs(lines, ocr.height) : [];
+    groupedLines.length >= 1
+      ? groupLinesIntoParagraphs(groupedLines, ocr.height)
+      : [];
   const useLineLayout = lineParagraphs.length > 0;
   const sourceParagraphs = useLineLayout
     ? lineParagraphs.map((group) => joinOcrLineTexts(group))
@@ -528,6 +680,16 @@ export async function ocrAndTranslateCanvas(options: {
         ),
       );
     }
+  } else if (groupedLines.length === 1 && translatedParas[0]) {
+    const only = groupedLines[0];
+    out = [
+      {
+        ...only,
+        translated: translatedParas[0],
+        fontHeightRatio: only.fontHeightRatio,
+        fontGroupId: only.fontGroupId,
+      },
+    ];
   }
 
   return {
@@ -535,7 +697,10 @@ export async function ocrAndTranslateCanvas(options: {
     height: canvas.height,
     backgroundUrl:
       out.length > 0
-        ? buildWhitenedPageBackground(canvas, out)
+        ? buildWhitenedPageBackground(canvas, out, {
+            // Also cover filtered OCR leftovers so ghost typing disappears.
+            coverLines: ocr.lines,
+          })
         : canvas.toDataURL("image/jpeg", 0.92),
     lines: out,
     plainParagraphs: translatedParas,

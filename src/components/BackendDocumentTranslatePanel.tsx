@@ -1,89 +1,60 @@
-import type { TranslatedPage } from "@/api/types";
-import { normalizeTranslateLanguage } from "@/constants/translateLanguages";
-import { splitDocumentBlocks } from "@/utils/ocrTranslateHelpers";
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import {
+  buildHeaders,
+  documentFileUrl,
+  getDocument,
+  translateDocument,
+} from "@/api/client";
+import type {
+  DocumentTranslateResponse,
+  LayoutPage,
+  TranslatedPage,
+  TranslatedPageSegment,
+} from "@/api/types";
+import { FittingOcrTranslatedLine } from "@/components/FittingOcrTranslatedLine";
+import {
+  PageLetterContent,
+  PagePlainContent,
+} from "@/components/LetterTranslateContent";
+import {
+  normalizeTranslateLanguage,
+  resolveDefaultTranslateLanguage,
+  TRANSLATE_LANGUAGE_OPTIONS,
+  type TranslateLanguageCode,
+} from "@/constants/translateLanguages";
+import {
+  downloadLayoutPdf,
+  resolveLayoutPageResults,
+  revokeTranslatedPageBackgrounds,
+} from "@/utils/backendLayoutTranslate";
+import {
+  pageHasMetaSections,
+  resolveLetterSections,
+} from "@/utils/letterSections";
+import type { TranslatedPageResult } from "@/utils/ocrTranslateHelpers";
+import { openPdfDocument, renderPdfPageToCanvas } from "@/utils/pdfDocument";
 
-const LETTER_SECTION_MARKERS = [
-  {
-    id: "header" as const,
-    marker: "[Capçalera / membrete]",
-    label: "Capçalera",
-    primary: false,
-  },
-  {
-    id: "body" as const,
-    marker: "[Cos de la carta]",
-    label: "Cos",
-    primary: true,
-  },
-  {
-    id: "footer" as const,
-    marker: "[Peu / contacte]",
-    label: "Peu",
-    primary: false,
-  },
-];
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.1;
+const ZOOM_DEFAULT = 1.5;
 
-type LetterSectionId = (typeof LETTER_SECTION_MARKERS)[number]["id"];
+type Phase =
+  | "idle"
+  | "loading-pdf"
+  | "loading-layout"
+  | "translating"
+  | "done"
+  | "error";
 
-type LetterSection = {
-  id: LetterSectionId;
-  label: string;
-  primary: boolean;
-  text: string;
-};
-
-const LETTER_DOC_TYPES = new Set([
-  "letter",
-  "bank_letter",
-  "carta",
-  "lletra banc",
-]);
-
-function isLetterDocType(
-  docType?: string | null,
-  docTypeCa?: string | null,
-): boolean {
-  const values = [docType, docTypeCa]
-    .filter(Boolean)
-    .map((value) => value!.trim().toLowerCase());
-  return values.some((value) => LETTER_DOC_TYPES.has(value));
+function clampZoom(value: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100));
 }
 
 function looksLikePassthroughSource(language?: string | null): boolean {
   const normalized = normalizeTranslateLanguage(language);
   return normalized === "ca" || normalized === "es";
-}
-
-/** Parse `[Capçalera…]` / `[Cos…]` / `[Peu…]` sections when present. */
-function parseLetterSections(text: string): LetterSection[] | null {
-  const trimmed = text.replace(/\r\n/g, "\n").trim();
-  if (!trimmed) return null;
-
-  const hasMarker = LETTER_SECTION_MARKERS.some(({ marker }) =>
-    trimmed.includes(marker),
-  );
-  if (!hasMarker) return null;
-
-  const positions = LETTER_SECTION_MARKERS.map((section) => ({
-    ...section,
-    index: trimmed.indexOf(section.marker),
-  }))
-    .filter((section) => section.index >= 0)
-    .sort((a, b) => a.index - b.index);
-
-  if (positions.length === 0) return null;
-
-  return positions.map((section, i) => {
-    const start = section.index + section.marker.length;
-    const end =
-      i + 1 < positions.length ? positions[i + 1].index : trimmed.length;
-    return {
-      id: section.id,
-      label: section.label,
-      primary: section.primary,
-      text: trimmed.slice(start, end).trim(),
-    };
-  });
 }
 
 function normalizeTranslatedPages(
@@ -93,79 +64,80 @@ function normalizeTranslatedPages(
   return [...pages].sort((a, b) => a.page - b.page);
 }
 
-function PagePlainContent({ text }: { text: string }) {
-  const blocks = splitDocumentBlocks(text);
-  if (blocks.length === 0) {
-    return (
-      <p className="empty-state" style={{ padding: "1.25rem" }}>
-        (Pàgina sense text)
-      </p>
-    );
+function revokePreviewUrls(urls: Record<number, string>) {
+  for (const url of Object.values(urls)) {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
   }
-  return (
-    <div className="pdf-ocr-page-plain">
-      {blocks.map((para, index) => (
-        <p key={`${index}-${para.slice(0, 32)}`}>{para}</p>
-      ))}
-    </div>
-  );
 }
 
-function PageLetterContent({ sections }: { sections: LetterSection[] }) {
-  return (
-    <div className="backend-translate-letter">
-      {sections.map((section) => (
-        <section
-          key={section.id}
-          className={`backend-translate-letter-section${
-            section.primary
-              ? " backend-translate-letter-section--primary"
-              : " backend-translate-letter-section--meta"
-          }`}
-        >
-          <h5 className="backend-translate-letter-label">{section.label}</h5>
-          {section.text ? (
-            <PagePlainContent text={section.text} />
-          ) : (
-            <p className="empty-state" style={{ padding: "0.5rem 0" }}>
-              —
-            </p>
-          )}
-        </section>
-      ))}
-    </div>
-  );
+function canvasToObjectUrl(canvas: HTMLCanvasElement): Promise<string> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("No s'ha pogut generar la vista prèvia de la pàgina."));
+          return;
+        }
+        resolve(URL.createObjectURL(blob));
+      },
+      "image/jpeg",
+      0.82,
+    );
+  });
+}
+
+function syncScrollRatio(source: HTMLElement, target: HTMLElement) {
+  const maxSource = source.scrollHeight - source.clientHeight;
+  const maxTarget = target.scrollHeight - target.clientHeight;
+  if (maxTarget <= 0) {
+    target.scrollTop = 0;
+    return;
+  }
+  const ratio = maxSource > 0 ? source.scrollTop / maxSource : 0;
+  target.scrollTop = ratio * maxTarget;
+}
+
+function scrollStageToPage(stage: HTMLElement, page: number) {
+  const el = stage.querySelector<HTMLElement>(`[data-translate-page="${page}"]`);
+  if (!el) return;
+  const top =
+    el.getBoundingClientRect().top -
+    stage.getBoundingClientRect().top +
+    stage.scrollTop;
+  stage.scrollTop = Math.max(0, top);
 }
 
 function TranslationPageBlock({
   page,
   text,
-  parseLetter,
+  segments,
+  showLetterhead,
   lang,
   dir,
-  showPageLabel = true,
 }: {
   page: number;
   text: string;
-  parseLetter: boolean;
+  segments?: TranslatedPageSegment[] | null;
+  showLetterhead: boolean;
   lang?: string;
   dir: "ltr" | "rtl";
-  showPageLabel?: boolean;
 }) {
-  const sections = parseLetter ? parseLetterSections(text) : null;
+  const sections = resolveLetterSections({ text, segments });
 
   return (
     <article
-      className="pdf-ocr-paper pdf-ocr-paper--translation backend-translate-page"
+      className={`pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--plain-view${
+        sections ? " backend-translate-page--structured" : ""
+      }`}
       data-translate-page={page}
       lang={lang}
       dir={dir}
     >
-      {showPageLabel && (
-        <div className="backend-translate-page-label">Pàg. {page}</div>
-      )}
       {sections ? (
-        <PageLetterContent sections={sections} />
+        <PageLetterContent
+          sections={sections}
+          showLetterhead={showLetterhead}
+        />
       ) : text.trim() ? (
         <PagePlainContent text={text} />
       ) : (
@@ -178,106 +150,870 @@ function TranslationPageBlock({
 }
 
 /**
- * Shows the document's stored backend translation beside the PDF preview.
- * Prefers `translated_pages` (one block per PDF page); falls back to
- * `translated_text`. Separate from client OCR (`PdfOcrTranslateWorkspace`).
+ * Backend layout-preserving translate workspace: original PDF + whitened scan
+ * overlay (`layout_pages`), with text fallback when layout is unavailable.
  */
 export function BackendDocumentTranslatePanel({
+  documentId,
   translatedText,
   translatedPages,
+  layoutPages: initialLayoutPages,
+  layoutPdfUrl: initialLayoutPdfUrl,
   documentLanguage,
-  docType,
-  docTypeCa,
   open,
-  onClose,
+  onTranslated,
 }: {
+  documentId: number;
   translatedText?: string | null;
   translatedPages?: TranslatedPage[] | null;
+  layoutPages?: LayoutPage[] | null;
+  layoutPdfUrl?: string | null;
   /** Classified / metadata language of the source document. */
   documentLanguage?: string | null;
+  /** Kept for callers; structure comes from `segments` / markers. */
   docType?: string | null;
   docTypeCa?: string | null;
   open: boolean;
-  onClose: () => void;
+  onTranslated?: (result: DocumentTranslateResponse) => void;
 }) {
-  if (!open) return null;
+  const defaultTarget = resolveDefaultTranslateLanguage(documentLanguage);
+  const [targetLanguage, setTargetLanguage] =
+    useState<TranslateLanguageCode>(defaultTarget);
+  const [showLetterhead, setShowLetterhead] = useState(true);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageCount, setPageCount] = useState(0);
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [pagePreviews, setPagePreviews] = useState<Record<number, string>>({});
+  const [pageSizes, setPageSizes] = useState<
+    Record<number, { width: number; height: number }>
+  >({});
+  const [pageResults, setPageResults] = useState<
+    Record<number, TranslatedPageResult>
+  >({});
+  const [layoutPdfUrl, setLayoutPdfUrl] = useState<string | null>(
+    initialLayoutPdfUrl ?? null,
+  );
+  const [textPages, setTextPages] = useState<TranslatedPage[]>(
+    () => normalizeTranslatedPages(translatedPages),
+  );
+  const [textFallback, setTextFallback] = useState(translatedText ?? "");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const pdfRef = useRef<PDFDocumentProxy | null>(null);
+  const panesRef = useRef<HTMLDivElement | null>(null);
+  const originalStageRef = useRef<HTMLDivElement | null>(null);
+  const translationStageRef = useRef<HTMLDivElement | null>(null);
+  const syncingScrollRef = useRef(false);
+  const scrollToPageRef = useRef<number | null>(null);
+  const pageNumberRef = useRef(pageNumber);
+  const pagePreviewsRef = useRef<Record<number, string>>({});
+  const pageResultsRef = useRef<Record<number, TranslatedPageResult>>({});
+  const autoStartedRef = useRef(false);
+  const targetLanguageRef = useRef(targetLanguage);
+  const translateAbortRef = useRef<AbortController | null>(null);
+  const initialLayoutPagesRef = useRef(initialLayoutPages);
+  const initialLayoutPdfUrlRef = useRef(initialLayoutPdfUrl);
+  const storedLayoutLoadedRef = useRef(false);
+
+  pageNumberRef.current = pageNumber;
+  targetLanguageRef.current = targetLanguage;
+  initialLayoutPagesRef.current = initialLayoutPages;
+  initialLayoutPdfUrlRef.current = initialLayoutPdfUrl;
 
   const metaSource = normalizeTranslateLanguage(documentLanguage);
-  const pages = normalizeTranslatedPages(translatedPages);
+  const useLayout = Object.keys(pageResults).length > 0;
+  const pages = textPages;
   const usePages = pages.length > 0;
+  const pagesByNumber = useMemo(() => {
+    const map = new Map<number, TranslatedPage>();
+    for (const page of pages) map.set(page.page, page);
+    return map;
+  }, [pages]);
+
   const combinedText = usePages
     ? pages
         .map((page) => page.text)
         .filter((text) => text.trim())
         .join("\n\n")
-    : (translatedText ?? "");
-  const looksArabic = /[\u0600-\u06FF]/.test(combinedText);
+    : textFallback;
+  const looksArabic =
+    targetLanguage === "ar" || /[\u0600-\u06FF]/.test(combinedText);
   const dir = looksArabic ? "rtl" : "ltr";
-  const letterDoc = isLetterDocType(docType, docTypeCa);
   const passthrough = looksLikePassthroughSource(documentLanguage);
-  const hasAnyText =
-    usePages
-      ? pages.some((page) => page.text.trim())
-      : Boolean(translatedText?.trim());
+  const hasAnyText = usePages
+    ? pages.some(
+        (page) =>
+          page.text.trim() || page.segments?.some((s) => s.text.trim()),
+      )
+    : Boolean(textFallback.trim());
+  const canToggleLetterhead =
+    !useLayout &&
+    (usePages
+      ? pages.some((page) => pageHasMetaSections(page))
+      : pageHasMetaSections({ text: textFallback, segments: null }));
+
+  const effectivePageCount = Math.max(
+    pageCount,
+    useLayout
+      ? Math.max(...Object.keys(pageResults).map(Number), 1)
+      : usePages
+        ? Math.max(...pages.map((p) => p.page), 1)
+        : hasAnyText
+          ? 1
+          : 0,
+  );
+  const pageIndexes = useMemo(
+    () => Array.from({ length: effectivePageCount }, (_, i) => i + 1),
+    [effectivePageCount],
+  );
+
+  const busy =
+    phase === "loading-pdf" ||
+    phase === "loading-layout" ||
+    phase === "translating";
+
+  function goToPage(next: number) {
+    const clamped = Math.min(Math.max(1, next), Math.max(effectivePageCount, 1));
+    scrollToPageRef.current = clamped;
+    setPageNumber(clamped);
+  }
+
+  function clearPageResults() {
+    revokeTranslatedPageBackgrounds(pageResultsRef.current);
+    pageResultsRef.current = {};
+    setPageResults({});
+  }
+
+  async function applyLayoutPages(
+    layoutPages: LayoutPage[],
+    signal?: AbortSignal,
+  ) {
+    setStatusMessage("Carregant fons de pàgina…");
+    const resolved = await resolveLayoutPageResults(layoutPages, signal);
+    if (signal?.aborted) return;
+    clearPageResults();
+    pageResultsRef.current = resolved;
+    setPageResults(resolved);
+  }
+
+  async function loadStoredLayoutPages(
+    layoutPages: LayoutPage[],
+    signal: AbortSignal,
+  ) {
+    setPhase("loading-layout");
+    setError(null);
+    setStatusMessage("Carregant layout…");
+    await applyLayoutPages(layoutPages, signal);
+    if (signal.aborted) return;
+    setStatusMessage(null);
+    setPhase("done");
+    goToPage(1);
+  }
+
+  async function resolveStoredLayout(
+    signal: AbortSignal,
+  ): Promise<LayoutPage[] | null> {
+    const fromProps = initialLayoutPagesRef.current;
+    if (fromProps?.length) return fromProps;
+
+    const doc = await getDocument(documentId);
+    if (signal.aborted) return null;
+
+    if (doc.layout_pages?.length) {
+      initialLayoutPagesRef.current = doc.layout_pages;
+      if (doc.layout_pdf_url) {
+        initialLayoutPdfUrlRef.current = doc.layout_pdf_url;
+        setLayoutPdfUrl(doc.layout_pdf_url);
+      }
+      if (doc.translated_text) setTextFallback(doc.translated_text);
+      if (doc.translated_pages?.length) {
+        setTextPages(normalizeTranslatedPages(doc.translated_pages));
+      }
+      return doc.layout_pages;
+    }
+
+    return null;
+  }
+
+  async function bootstrapLayout(force = false) {
+    if (force) {
+      storedLayoutLoadedRef.current = false;
+    }
+    translateAbortRef.current?.abort();
+    const ac = new AbortController();
+    translateAbortRef.current = ac;
+    const signal = ac.signal;
+
+    try {
+      if (!force) {
+        const stored = await resolveStoredLayout(signal);
+        if (signal.aborted || translateAbortRef.current !== ac) return;
+        if (stored?.length) {
+          await loadStoredLayoutPages(stored, signal);
+          return;
+        }
+      }
+
+      setPhase("translating");
+      setError(null);
+      setStatusMessage("Traduint amb layout…");
+
+      const result = await translateDocument(documentId, {
+        target_language: targetLanguageRef.current,
+        preserve_layout: true,
+      });
+
+      if (signal.aborted || translateAbortRef.current !== ac) return;
+
+      setTextFallback(result.translated_text ?? "");
+      setTextPages(normalizeTranslatedPages(result.translated_pages));
+      setLayoutPdfUrl(result.layout_pdf_url ?? null);
+      initialLayoutPagesRef.current = result.layout_pages ?? null;
+      initialLayoutPdfUrlRef.current = result.layout_pdf_url ?? null;
+      onTranslated?.(result);
+
+      if (result.layout_pages?.length) {
+        await applyLayoutPages(result.layout_pages, signal);
+      } else {
+        clearPageResults();
+      }
+
+      if (signal.aborted || translateAbortRef.current !== ac) return;
+
+      setStatusMessage(null);
+      setPhase("done");
+      goToPage(1);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setError(
+        err instanceof Error
+          ? err.message
+          : "No s'ha pogut completar la traducció.",
+      );
+      setPhase("error");
+      setStatusMessage(null);
+    }
+  }
+
+  async function runLayoutTranslate(force = false) {
+    await bootstrapLayout(force);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    setShowLetterhead(true);
+    setPageNumber(1);
+    setZoom(ZOOM_DEFAULT);
+    setError(null);
+    setStatusMessage(null);
+    setPhase("idle");
+    setTargetLanguage(resolveDefaultTranslateLanguage(documentLanguage));
+    setTextPages(normalizeTranslatedPages(translatedPages));
+    setTextFallback(translatedText ?? "");
+    setLayoutPdfUrl(initialLayoutPdfUrl ?? null);
+    translateAbortRef.current?.abort();
+    clearPageResults();
+    autoStartedRef.current = false;
+    storedLayoutLoadedRef.current = false;
+    scrollToPageRef.current = 1;
+    // Reset only when opening / switching documents — not when parent props
+    // update after our own translate callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [open, documentId]);
+
+  // Load original PDF page previews.
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+    const ac = new AbortController();
+
+    revokePreviewUrls(pagePreviewsRef.current);
+    pagePreviewsRef.current = {};
+    setPagePreviews({});
+    setPageSizes({});
+    setPageCount(0);
+    setPhase("loading-pdf");
+
+    (async () => {
+      try {
+        const previous = pdfRef.current;
+        pdfRef.current = null;
+        if (previous) void previous.cleanup();
+
+        const res = await fetch(documentFileUrl(documentId), {
+          headers: buildHeaders(),
+          signal: ac.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.arrayBuffer();
+        if (cancelled) return;
+
+        const blob = new Blob([data], { type: "application/pdf" });
+        const objectUrl = URL.createObjectURL(blob);
+        try {
+          const pdf = await openPdfDocument(objectUrl, ac.signal);
+          if (cancelled) {
+            void pdf.cleanup();
+            return;
+          }
+          pdfRef.current = pdf;
+          setPageCount(pdf.numPages);
+
+          const nextPreviews: Record<number, string> = {};
+          const nextSizes: Record<number, { width: number; height: number }> =
+            {};
+
+          for (let page = 1; page <= pdf.numPages; page++) {
+            ac.signal.throwIfAborted();
+            const canvas = await renderPdfPageToCanvas(pdf, page, {
+              scale: 1.35,
+              signal: ac.signal,
+            });
+            if (cancelled) return;
+            nextPreviews[page] = await canvasToObjectUrl(canvas);
+            nextSizes[page] = { width: canvas.width, height: canvas.height };
+            pagePreviewsRef.current = nextPreviews;
+            setPagePreviews({ ...nextPreviews });
+            setPageSizes({ ...nextSizes });
+          }
+
+          if (!cancelled) setPhase((p) => (p === "loading-pdf" ? "idle" : p));
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError(
+          err instanceof Error
+            ? err.message
+            : "No s'ha pogut obrir el PDF per comparar.",
+        );
+        setPhase("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [open, documentId]);
+
+  // Use stored layout_pages when the document already has them.
+  useEffect(() => {
+    if (!open || !initialLayoutPages?.length || storedLayoutLoadedRef.current) {
+      return;
+    }
+    if (Object.keys(pageResultsRef.current).length > 0) {
+      storedLayoutLoadedRef.current = true;
+      return;
+    }
+    storedLayoutLoadedRef.current = true;
+    autoStartedRef.current = true;
+    translateAbortRef.current?.abort();
+    const ac = new AbortController();
+    translateAbortRef.current = ac;
+    if (initialLayoutPdfUrl) setLayoutPdfUrl(initialLayoutPdfUrl);
+    void loadStoredLayoutPages(initialLayoutPages, ac.signal);
+  }, [open, initialLayoutPages, initialLayoutPdfUrl]);
+
+  // No stored layout yet — fetch document or run backend translate.
+  useEffect(() => {
+    if (!open || initialLayoutPages?.length) return;
+    if (autoStartedRef.current) return;
+    if (phase !== "idle") return;
+    autoStartedRef.current = true;
+    void bootstrapLayout(false);
+  }, [open, initialLayoutPages, phase]);
+
+  useEffect(() => {
+    return () => {
+      translateAbortRef.current?.abort();
+      const pdf = pdfRef.current;
+      pdfRef.current = null;
+      if (pdf) void pdf.cleanup();
+      revokePreviewUrls(pagePreviewsRef.current);
+      pagePreviewsRef.current = {};
+      clearPageResults();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (open) return;
+    translateAbortRef.current?.abort();
+    const pdf = pdfRef.current;
+    pdfRef.current = null;
+    if (pdf) void pdf.cleanup();
+    clearPageResults();
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const targetPage = scrollToPageRef.current;
+    if (targetPage == null || targetPage !== pageNumber) return;
+    scrollToPageRef.current = null;
+
+    const original = originalStageRef.current;
+    const translation = translationStageRef.current;
+    syncingScrollRef.current = true;
+    if (original) scrollStageToPage(original, targetPage);
+    if (translation) scrollStageToPage(translation, targetPage);
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  }, [open, pageNumber, pagePreviews, pageResults, textPages, textFallback]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key !== "+" && e.key !== "=" && e.key !== "-" && e.key !== "0")
+        return;
+      const panes = panesRef.current;
+      if (!panes) return;
+      const target = e.target;
+      if (!(target instanceof Node) || !panes.contains(target)) {
+        if (!panes.matches(":hover")) return;
+      }
+      e.preventDefault();
+      if (e.key === "0") {
+        setZoom(1);
+        return;
+      }
+      const delta = e.key === "-" ? -ZOOM_STEP : ZOOM_STEP;
+      setZoom((z) => clampZoom(z + delta));
+    };
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const panes = panesRef.current;
+    if (!panes) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      setZoom((z) => clampZoom(z + delta));
+    };
+
+    panes.addEventListener("wheel", onWheel, { passive: false });
+    return () => panes.removeEventListener("wheel", onWheel);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const original = originalStageRef.current;
+    const translation = translationStageRef.current;
+    if (!original || !translation) return;
+
+    const onOriginalScroll = () => {
+      if (syncingScrollRef.current) return;
+      syncingScrollRef.current = true;
+      syncScrollRatio(original, translation);
+      updatePageFromStage(original);
+      requestAnimationFrame(() => {
+        syncingScrollRef.current = false;
+      });
+    };
+
+    const onTranslationScroll = () => {
+      if (syncingScrollRef.current) return;
+      syncingScrollRef.current = true;
+      syncScrollRatio(translation, original);
+      updatePageFromStage(translation);
+      requestAnimationFrame(() => {
+        syncingScrollRef.current = false;
+      });
+    };
+
+    function updatePageFromStage(stage: HTMLElement) {
+      const els = stage.querySelectorAll<HTMLElement>("[data-translate-page]");
+      if (els.length === 0) return;
+
+      const stageTop =
+        stage.getBoundingClientRect().top + stage.clientHeight * 0.35;
+      let bestPage = pageNumberRef.current;
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      els.forEach((el) => {
+        const page = Number(el.dataset.translatePage);
+        if (!Number.isFinite(page)) return;
+        const rect = el.getBoundingClientRect();
+        const distance = Math.abs(rect.top - stageTop);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestPage = page;
+        }
+      });
+
+      if (bestPage !== pageNumberRef.current) {
+        setPageNumber(bestPage);
+      }
+    }
+
+    original.addEventListener("scroll", onOriginalScroll, { passive: true });
+    translation.addEventListener("scroll", onTranslationScroll, {
+      passive: true,
+    });
+    return () => {
+      original.removeEventListener("scroll", onOriginalScroll);
+      translation.removeEventListener("scroll", onTranslationScroll);
+    };
+  }, [open, effectivePageCount]);
+
+  if (!open) return null;
 
   return (
-    <div className="card card-panel split-detail-translate">
-      <div className="toolbar-row" style={{ marginBottom: 0 }}>
-        <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
-          Traducció
-          {passthrough && (
-            <span className="backend-translate-badge">
-              Original ({metaSource ?? "ca/es"})
-            </span>
-          )}
-        </h3>
+    <div className="pdf-ocr-workspace pdf-layout-translate-workspace">
+      <div className="pdf-ocr-workspace-toolbar">
+        <div className="pdf-ocr-workspace-pager">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy || pageNumber <= 1}
+            onClick={() => goToPage(pageNumber - 1)}
+          >
+            ←
+          </button>
+          <span>
+            Pàg. {pageNumber}
+            {effectivePageCount ? ` / ${effectivePageCount}` : ""}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy || !effectivePageCount || pageNumber >= effectivePageCount}
+            onClick={() => goToPage(pageNumber + 1)}
+          >
+            →
+          </button>
+        </div>
+
+        <div
+          className="pdf-ocr-workspace-zoom"
+          role="group"
+          aria-label="Zoom document"
+        >
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy || zoom <= ZOOM_MIN}
+            onClick={() => setZoom((z) => clampZoom(z - 0.25))}
+            title="Allunyar"
+          >
+            −
+          </button>
+          <span className="pdf-ocr-workspace-zoom-label">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy || zoom >= ZOOM_MAX}
+            onClick={() => setZoom((z) => clampZoom(z + 0.25))}
+            title="Apropar"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy || zoom === 1}
+            onClick={() => setZoom(1)}
+          >
+            100%
+          </button>
+        </div>
+
+        <div className="pdf-ocr-workspace-langs">
+          <label className="pdf-ocr-workspace-lang">
+            <span>Destí</span>
+            <select
+              value={targetLanguage}
+              disabled={busy}
+              onChange={(e) =>
+                setTargetLanguage(e.target.value as TranslateLanguageCode)
+              }
+            >
+              {TRANSLATE_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <button
           type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={onClose}
-          aria-label="Tancar panell de traducció"
+          className="btn btn-primary btn-sm"
+          disabled={busy || pageCount < 1}
+          onClick={() => void runLayoutTranslate(true)}
         >
-          Tancar
+          {busy ? "Traduint…" : "Traduir"}
         </button>
+
+        {layoutPdfUrl && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy || downloadingPdf}
+            onClick={() => {
+              void (async () => {
+                setDownloadingPdf(true);
+                try {
+                  await downloadLayoutPdf(
+                    layoutPdfUrl,
+                    `traduccio-layout-${documentId}.pdf`,
+                  );
+                } catch (err) {
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : "No s'ha pogut descarregar el PDF.",
+                  );
+                } finally {
+                  setDownloadingPdf(false);
+                }
+              })();
+            }}
+          >
+            {downloadingPdf ? "Descarregant…" : "Descarregar PDF layout"}
+          </button>
+        )}
+
+        {canToggleLetterhead && (
+          <label className="checkbox-label backend-translate-letterhead-toggle">
+            <input
+              type="checkbox"
+              checked={showLetterhead}
+              onChange={(event) => setShowLetterhead(event.target.checked)}
+            />
+            Mostrar capçalera
+          </label>
+        )}
+
+        {statusMessage && (
+          <p className="pdf-ocr-workspace-status" aria-live="polite">
+            {statusMessage}
+          </p>
+        )}
       </div>
 
-      <div className="split-detail-translate-scroll">
-        <div className="backend-translate-stack">
-          {!hasAnyText ? (
-            <div
-              className="pdf-ocr-paper pdf-ocr-paper--translation"
-              lang={metaSource ?? undefined}
-              dir={dir}
-            >
-              <p
-                className="empty-state"
-                style={{ padding: "1.5rem", position: "relative" }}
-              >
-                Aquest document no té text traduït.
-              </p>
+      {error && <div className="alert alert-error">{error}</div>}
+
+      <div className="pdf-ocr-workspace-panes" ref={panesRef}>
+        <section
+          className="pdf-ocr-workspace-pane"
+          aria-label="Document original"
+        >
+          <h4 className="pdf-ocr-workspace-pane-title">Original</h4>
+          <div className="pdf-ocr-doc-stage" ref={originalStageRef}>
+            <div className="pdf-ocr-doc-stack" style={{ zoom }}>
+              {pageIndexes.length === 0 ? (
+                <div
+                  className="pdf-ocr-paper pdf-ocr-paper--original"
+                  style={{ minHeight: "28rem", width: "min(36rem, 100%)" }}
+                >
+                  <p className="empty-state" style={{ padding: "1.5rem" }}>
+                    Carregant document…
+                  </p>
+                </div>
+              ) : (
+                pageIndexes.map((page) => {
+                  const preview = pagePreviews[page];
+                  const size = pageSizes[page];
+                  return (
+                    <div
+                      key={`original-${page}`}
+                      className="pdf-ocr-paper pdf-ocr-paper--original"
+                      data-translate-page={page}
+                      style={
+                        size
+                          ? undefined
+                          : { minHeight: "28rem", width: "min(36rem, 100%)" }
+                      }
+                    >
+                      {preview ? (
+                        <img
+                          src={preview}
+                          alt={`Pàgina ${page}`}
+                          draggable={false}
+                        />
+                      ) : (
+                        <p
+                          className="empty-state"
+                          style={{ padding: "1.5rem" }}
+                        >
+                          Carregant pàgina {page}…
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
-          ) : usePages ? (
-            pages.map((page) => (
-              <TranslationPageBlock
-                key={page.page}
-                page={page.page}
-                text={page.text}
-                parseLetter={letterDoc}
-                lang={metaSource ?? undefined}
-                dir={dir}
-              />
-            ))
-          ) : (
-            <TranslationPageBlock
-              page={1}
-              text={translatedText ?? ""}
-              parseLetter={letterDoc}
-              lang={metaSource ?? undefined}
-              dir={dir}
-              showPageLabel={false}
-            />
-          )}
-        </div>
+          </div>
+        </section>
+
+        <section
+          className="pdf-ocr-workspace-pane"
+          aria-label="Document traduït"
+        >
+          <h4 className="pdf-ocr-workspace-pane-title">
+            Traducció
+            {useLayout
+              ? ` (${metaSource ?? "auto"} → ${targetLanguage})`
+              : null}
+            {passthrough && (
+              <span className="backend-translate-badge">
+                Original ({metaSource ?? "ca/es"})
+              </span>
+            )}
+          </h4>
+          <div className="pdf-ocr-doc-stage" ref={translationStageRef}>
+            <div className="pdf-ocr-doc-stack" style={{ zoom }}>
+              {useLayout
+                ? pageIndexes.map((page) => {
+                    const result = pageResults[page] ?? null;
+                    const preview = pagePreviews[page];
+                    const size = pageSizes[page];
+                    const layoutW = result?.width ?? size?.width ?? 1;
+                    const layoutH = result?.height ?? size?.height ?? 1;
+                    const hasLines = Boolean(result && result.lines.length > 0);
+                    const aspectStyle =
+                      size || result
+                        ? {
+                            width: "100%",
+                            aspectRatio: `${layoutW} / ${layoutH}`,
+                          }
+                        : { minHeight: "28rem", width: "100%" };
+
+                    return (
+                      <div
+                        key={`translation-${page}`}
+                        className="pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--on-scan"
+                        data-translate-page={page}
+                        lang={targetLanguage}
+                        dir={dir}
+                        style={aspectStyle}
+                      >
+                        {hasLines && result ? (
+                          <>
+                            <img
+                              className="pdf-ocr-page-bg"
+                              src={result.backgroundUrl}
+                              alt=""
+                              draggable={false}
+                            />
+                            <div className="pdf-ocr-page-layout">
+                              {result.lines.map((line, index) => (
+                                <FittingOcrTranslatedLine
+                                  key={`p${page}-l${index}-${line.bbox.y0}-${line.bbox.x0}`}
+                                  text={line.translated}
+                                  title={line.text}
+                                  bbox={line.bbox}
+                                  layoutW={layoutW}
+                                  layoutH={layoutH}
+                                  align={line.align ?? "left"}
+                                  words={line.words}
+                                  fontHeightRatio={line.fontHeightRatio}
+                                  fontGroupId={line.fontGroupId}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        ) : preview && !busy && phase === "done" ? (
+                          <img
+                            className="pdf-ocr-page-bg"
+                            src={preview}
+                            alt={`Vista prèvia pàgina ${page}`}
+                            draggable={false}
+                            style={{ opacity: 0.35 }}
+                          />
+                        ) : (
+                          <p
+                            className="empty-state"
+                            style={{
+                              padding: "1.5rem",
+                              position: "relative",
+                            }}
+                          >
+                            {busy
+                              ? phase === "loading-layout"
+                                ? `Carregant layout… (pàg. ${page})`
+                                : `Generant traducció… (pàg. ${page})`
+                              : page === 1
+                                ? "Preparant layout…"
+                                : `Pàgina ${page}`}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                : !hasAnyText && busy ? (
+                    <div
+                      className="pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--plain-view"
+                      data-translate-page={1}
+                    >
+                      <p
+                        className="empty-state"
+                        style={{ padding: "1.5rem", position: "relative" }}
+                      >
+                        Traduint document…
+                      </p>
+                    </div>
+                  ) : !hasAnyText ? (
+                    <div
+                      className="pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--plain-view"
+                      data-translate-page={1}
+                      lang={metaSource ?? undefined}
+                      dir={dir}
+                    >
+                      <p
+                        className="empty-state"
+                        style={{ padding: "1.5rem", position: "relative" }}
+                      >
+                        Aquest document no té text traduït.
+                      </p>
+                    </div>
+                  ) : usePages ? (
+                    pageIndexes.map((page) => {
+                      const entry = pagesByNumber.get(page);
+                      return (
+                        <TranslationPageBlock
+                          key={page}
+                          page={page}
+                          text={entry?.text ?? ""}
+                          segments={entry?.segments}
+                          showLetterhead={showLetterhead}
+                          lang={metaSource ?? undefined}
+                          dir={dir}
+                        />
+                      );
+                    })
+                  ) : (
+                    <TranslationPageBlock
+                      page={1}
+                      text={textFallback}
+                      showLetterhead={showLetterhead}
+                      lang={metaSource ?? undefined}
+                      dir={dir}
+                    />
+                  )}
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

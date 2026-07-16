@@ -1,0 +1,92 @@
+{
+  "state": "ok",
+  "lineCount": 61,
+  "hasBg": true,
+  "aligns": {
+    "center": 16,
+    "left": 44,
+    "justify": 1
+  },
+  "samples": [
+    {
+      "text": "BOMBAY SPIRITS COMPANY LID.",
+      "top": "74.9362px",
+      "left": "140.768px",
+      "width": "229.703px",
+      "fontSize": "17.2687px",
+      "textAlign": "center",
+      "align": "center"
+    },
+    {
+      "text": "17 Cornwall Terrace",
+      "top": "100.717px",
+      "left": "208.753px",
+      "width": "93.7341px",
+      "fontSize": "12px",
+      "textAlign": "center",
+      "align": "center"
+    },
+    {
+      "text": "Regent’s Park",
+      "top": "110.682px",
+      "left": "223.166px",
+      "width": "64.8916px",
+      "fontSize": "12px",
+      "textAlign": "center",
+      "align": "center"
+    },
+    {
+      "text": "London NW1 4QP",
+      "top": "120.998px",
+      "left": "213.728px",
+      "width": "83.7691px",
+      "fontSize": "12px",
+      "textAlign": "center",
+      "align": "center"
+    },
+    {
+      "text": "Telephone (01)-486 7272",
+      "top": "131.314px",
+      "left": "198.629px",
+      "width": "113.983px",
+      "fontSize": "12px",
+      "textAlign": "center",
+      "align": "center"
+    },
+    {
+      "text": "Telex 27732 JANDB G",
+      "top": "141.279px",
+      "left": "202.057px",
+      "width": "107.127px",
+      "fontSize": "12px",
+      "textAlign": "center",
+      "align": "center"
+    },
+    {
+      "text": "Cables Justerini London NW1",
+      "top": "151.594px",
+      "left": "185.746px",
+      "width": "139.732px",
+      "fontSize": "12px",
+      "textAlign": "center",
+      "align": "center"
+    },
+    {
+      "text": "13th August 1985",
+      "top": "238.903px",
+      "left": "86.5115px",
+      "width": "97.162px",
+      "fontSize": "12px",
+      "textAlign": "left",
+      "align": "left"
+    }
+  ],
+  "fillRatio": 0.988394584139265,
+  "heightFill": 1.0791044776119403,
+  "zoomLabel": "98%",
+  "medianFont": 12,
+  "stageW": 517,
+  "paperW": 511,
+  "stageH": 670,
+  "paperH": 723
+}
