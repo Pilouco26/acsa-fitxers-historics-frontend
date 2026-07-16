@@ -1,4 +1,5 @@
 ﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   buildHeaders,
@@ -13,6 +14,7 @@ import type {
   TranslatedPageSegment,
 } from "@/api/types";
 import { FittingOcrTranslatedLine } from "@/components/FittingOcrTranslatedLine";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import {
   PageLetterContent,
   PagePlainContent,
@@ -24,7 +26,6 @@ import {
   type TranslateLanguageCode,
 } from "@/constants/translateLanguages";
 import {
-  downloadLayoutPdf,
   resolveLayoutPageResults,
   revokeTranslatedPageBackgrounds,
 } from "@/utils/backendLayoutTranslate";
@@ -38,7 +39,8 @@ import { openPdfDocument, renderPdfPageToCanvas } from "@/utils/pdfDocument";
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
 const ZOOM_STEP = 0.1;
-const ZOOM_DEFAULT = 1.5;
+const ZOOM_DEFAULT = 1.25;
+const PAGE_DISPLAY_REM = 34;
 
 type Phase =
   | "idle"
@@ -50,6 +52,18 @@ type Phase =
 
 function clampZoom(value: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100));
+}
+
+function getPagePaperStyle(
+  size: { width: number; height: number } | null | undefined,
+): CSSProperties {
+  if (!size) {
+    return { minHeight: "28rem", width: `${PAGE_DISPLAY_REM}rem` };
+  }
+  return {
+    width: `${PAGE_DISPLAY_REM}rem`,
+    aspectRatio: `${size.width} / ${size.height}`,
+  };
 }
 
 function looksLikePassthroughSource(language?: string | null): boolean {
@@ -97,6 +111,17 @@ function syncScrollRatio(source: HTMLElement, target: HTMLElement) {
   target.scrollTop = ratio * maxTarget;
 }
 
+function translationLoadingLabel(
+  phase: Phase,
+  statusMessage: string | null,
+): string {
+  if (statusMessage) return statusMessage;
+  if (phase === "loading-layout") return "Carregant layout…";
+  if (phase === "translating") return "Traduint document…";
+  if (phase === "loading-pdf") return "Carregant document…";
+  return "Preparant traducció…";
+}
+
 function scrollStageToPage(stage: HTMLElement, page: number) {
   const el = stage.querySelector<HTMLElement>(`[data-translate-page="${page}"]`);
   if (!el) return;
@@ -105,6 +130,11 @@ function scrollStageToPage(stage: HTMLElement, page: number) {
     stage.getBoundingClientRect().top +
     stage.scrollTop;
   stage.scrollTop = Math.max(0, top);
+}
+
+function centerStageHorizontally(stage: HTMLElement) {
+  const overflow = stage.scrollWidth - stage.clientWidth;
+  stage.scrollLeft = overflow > 0 ? overflow / 2 : 0;
 }
 
 function TranslationPageBlock({
@@ -193,14 +223,11 @@ export function BackendDocumentTranslatePanel({
   const [pageResults, setPageResults] = useState<
     Record<number, TranslatedPageResult>
   >({});
-  const [layoutPdfUrl, setLayoutPdfUrl] = useState<string | null>(
-    initialLayoutPdfUrl ?? null,
-  );
   const [textPages, setTextPages] = useState<TranslatedPage[]>(
     () => normalizeTranslatedPages(translatedPages),
   );
   const [textFallback, setTextFallback] = useState(translatedText ?? "");
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [rotation, setRotation] = useState(0);
 
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
   const panesRef = useRef<HTMLDivElement | null>(null);
@@ -217,6 +244,13 @@ export function BackendDocumentTranslatePanel({
   const initialLayoutPagesRef = useRef(initialLayoutPages);
   const initialLayoutPdfUrlRef = useRef(initialLayoutPdfUrl);
   const storedLayoutLoadedRef = useRef(false);
+  const initialScrollCenteredRef = useRef(false);
+  const zoomAnchorRef = useRef<{
+    previousZoom: number;
+    nextZoom: number;
+    original: { x: number; y: number; localX: number; localY: number } | null;
+    translation: { x: number; y: number; localX: number; localY: number } | null;
+  } | null>(null);
 
   pageNumberRef.current = pageNumber;
   targetLanguageRef.current = targetLanguage;
@@ -269,11 +303,72 @@ export function BackendDocumentTranslatePanel({
     () => Array.from({ length: effectivePageCount }, (_, i) => i + 1),
     [effectivePageCount],
   );
+  const rotationDeg = useMemo(() => {
+    const normalized = ((rotation % 360) + 360) % 360;
+    return normalized;
+  }, [rotation]);
+  const stackStyle = useMemo(
+    () => ({
+      zoom,
+      ...(rotationDeg
+        ? {
+            transform: `rotate(${rotationDeg}deg)`,
+            transformOrigin: "center center",
+          }
+        : {}),
+    }),
+    [zoom, rotationDeg],
+  );
 
   const busy =
     phase === "loading-pdf" ||
     phase === "loading-layout" ||
     phase === "translating";
+  const translationPending = phase !== "done" && phase !== "error";
+  const translationLoadingLabelText = translationLoadingLabel(
+    phase,
+    statusMessage,
+  );
+
+  function resolveStageAnchor(
+    stage: HTMLElement,
+    clientX?: number,
+    clientY?: number,
+  ): { x: number; y: number; localX: number; localY: number } {
+    const rect = stage.getBoundingClientRect();
+    const localX =
+      clientX != null && clientX >= rect.left && clientX <= rect.right
+        ? clientX - rect.left
+        : rect.width / 2;
+    const localY =
+      clientY != null && clientY >= rect.top && clientY <= rect.bottom
+        ? clientY - rect.top
+        : rect.height / 2;
+
+    return {
+      x: (stage.scrollLeft + localX) / Math.max(zoom, 0.01),
+      y: (stage.scrollTop + localY) / Math.max(zoom, 0.01),
+      localX,
+      localY,
+    };
+  }
+
+  function applyZoom(nextZoom: number, clientX?: number, clientY?: number) {
+    const clamped = clampZoom(nextZoom);
+    if (clamped === zoom) return;
+
+    const original = originalStageRef.current;
+    const translation = translationStageRef.current;
+    zoomAnchorRef.current = {
+      previousZoom: zoom,
+      nextZoom: clamped,
+      original: original ? resolveStageAnchor(original, clientX, clientY) : null,
+      translation: translation
+        ? resolveStageAnchor(translation, clientX, clientY)
+        : null,
+    };
+    setZoom(clamped);
+  }
 
   function goToPage(next: number) {
     const clamped = Math.min(Math.max(1, next), Math.max(effectivePageCount, 1));
@@ -326,7 +421,6 @@ export function BackendDocumentTranslatePanel({
       initialLayoutPagesRef.current = doc.layout_pages;
       if (doc.layout_pdf_url) {
         initialLayoutPdfUrlRef.current = doc.layout_pdf_url;
-        setLayoutPdfUrl(doc.layout_pdf_url);
       }
       if (doc.translated_text) setTextFallback(doc.translated_text);
       if (doc.translated_pages?.length) {
@@ -359,7 +453,7 @@ export function BackendDocumentTranslatePanel({
 
       setPhase("translating");
       setError(null);
-      setStatusMessage("Traduint amb layout…");
+      setStatusMessage("Traduint…");
 
       const result = await translateDocument(documentId, {
         target_language: targetLanguageRef.current,
@@ -370,7 +464,6 @@ export function BackendDocumentTranslatePanel({
 
       setTextFallback(result.translated_text ?? "");
       setTextPages(normalizeTranslatedPages(result.translated_pages));
-      setLayoutPdfUrl(result.layout_pdf_url ?? null);
       initialLayoutPagesRef.current = result.layout_pages ?? null;
       initialLayoutPdfUrlRef.current = result.layout_pdf_url ?? null;
       onTranslated?.(result);
@@ -413,11 +506,12 @@ export function BackendDocumentTranslatePanel({
     setTargetLanguage(resolveDefaultTranslateLanguage(documentLanguage));
     setTextPages(normalizeTranslatedPages(translatedPages));
     setTextFallback(translatedText ?? "");
-    setLayoutPdfUrl(initialLayoutPdfUrl ?? null);
+    setRotation(0);
     translateAbortRef.current?.abort();
     clearPageResults();
     autoStartedRef.current = false;
     storedLayoutLoadedRef.current = false;
+    initialScrollCenteredRef.current = false;
     scrollToPageRef.current = 1;
     // Reset only when opening / switching documents — not when parent props
     // update after our own translate callback.
@@ -517,7 +611,6 @@ export function BackendDocumentTranslatePanel({
     translateAbortRef.current?.abort();
     const ac = new AbortController();
     translateAbortRef.current = ac;
-    if (initialLayoutPdfUrl) setLayoutPdfUrl(initialLayoutPdfUrl);
     void loadStoredLayoutPages(initialLayoutPages, ac.signal);
   }, [open, initialLayoutPages, initialLayoutPdfUrl]);
 
@@ -567,6 +660,51 @@ export function BackendDocumentTranslatePanel({
     });
   }, [open, pageNumber, pagePreviews, pageResults, textPages, textFallback]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    const anchor = zoomAnchorRef.current;
+    if (!anchor || anchor.nextZoom !== zoom) return;
+
+    const original = originalStageRef.current;
+    const translation = translationStageRef.current;
+
+    const restoreStageScroll = (
+      stage: HTMLElement | null,
+      point: { x: number; y: number; localX: number; localY: number } | null,
+    ) => {
+      if (!stage || !point) return;
+      stage.scrollLeft = Math.max(0, point.x * zoom - point.localX);
+      stage.scrollTop = Math.max(0, point.y * zoom - point.localY);
+    };
+
+    syncingScrollRef.current = true;
+    restoreStageScroll(original, anchor.original);
+    restoreStageScroll(translation, anchor.translation);
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+    zoomAnchorRef.current = null;
+  }, [open, zoom]);
+
+  useLayoutEffect(() => {
+    if (!open || initialScrollCenteredRef.current) return;
+    if (Object.keys(pagePreviews).length === 0 && !pageResultsRef.current[1]) {
+      return;
+    }
+
+    const original = originalStageRef.current;
+    const translation = translationStageRef.current;
+    if (!original || !translation) return;
+
+    initialScrollCenteredRef.current = true;
+    syncingScrollRef.current = true;
+    centerStageHorizontally(original);
+    centerStageHorizontally(translation);
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  }, [open, pagePreviews, pageResults]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -582,17 +720,17 @@ export function BackendDocumentTranslatePanel({
       }
       e.preventDefault();
       if (e.key === "0") {
-        setZoom(1);
+        applyZoom(1);
         return;
       }
       const delta = e.key === "-" ? -ZOOM_STEP : ZOOM_STEP;
-      setZoom((z) => clampZoom(z + delta));
+      applyZoom(zoom + delta);
     };
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [open]);
+  }, [open, zoom]);
 
   useEffect(() => {
     if (!open) return;
@@ -603,12 +741,12 @@ export function BackendDocumentTranslatePanel({
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-      setZoom((z) => clampZoom(z + delta));
+      applyZoom(zoom + delta, e.clientX, e.clientY);
     };
 
     panes.addEventListener("wheel", onWheel, { passive: false });
     return () => panes.removeEventListener("wheel", onWheel);
-  }, [open]);
+  }, [open, zoom]);
 
   useEffect(() => {
     if (!open) return;
@@ -708,7 +846,7 @@ export function BackendDocumentTranslatePanel({
             type="button"
             className="btn btn-secondary btn-sm"
             disabled={busy || zoom <= ZOOM_MIN}
-            onClick={() => setZoom((z) => clampZoom(z - 0.25))}
+            onClick={() => applyZoom(zoom - 0.25)}
             title="Allunyar"
           >
             −
@@ -720,7 +858,7 @@ export function BackendDocumentTranslatePanel({
             type="button"
             className="btn btn-secondary btn-sm"
             disabled={busy || zoom >= ZOOM_MAX}
-            onClick={() => setZoom((z) => clampZoom(z + 0.25))}
+            onClick={() => applyZoom(zoom + 0.25)}
             title="Apropar"
           >
             +
@@ -729,7 +867,7 @@ export function BackendDocumentTranslatePanel({
             type="button"
             className="btn btn-secondary btn-sm"
             disabled={busy || zoom === 1}
-            onClick={() => setZoom(1)}
+            onClick={() => applyZoom(1)}
           >
             100%
           </button>
@@ -763,34 +901,15 @@ export function BackendDocumentTranslatePanel({
           {busy ? "Traduint…" : "Traduir"}
         </button>
 
-        {layoutPdfUrl && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            disabled={busy || downloadingPdf}
-            onClick={() => {
-              void (async () => {
-                setDownloadingPdf(true);
-                try {
-                  await downloadLayoutPdf(
-                    layoutPdfUrl,
-                    `traduccio-layout-${documentId}.pdf`,
-                  );
-                } catch (err) {
-                  setError(
-                    err instanceof Error
-                      ? err.message
-                      : "No s'ha pogut descarregar el PDF.",
-                  );
-                } finally {
-                  setDownloadingPdf(false);
-                }
-              })();
-            }}
-          >
-            {downloadingPdf ? "Descarregant…" : "Descarregar PDF layout"}
-          </button>
-        )}
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={busy}
+          onClick={() => setRotation((deg) => (deg + 90) % 360)}
+          title="Rotar 90°"
+        >
+          Rotar
+        </button>
 
         {canToggleLetterhead && (
           <label className="checkbox-label backend-translate-letterhead-toggle">
@@ -818,12 +937,15 @@ export function BackendDocumentTranslatePanel({
           aria-label="Document original"
         >
           <h4 className="pdf-ocr-workspace-pane-title">Original</h4>
-          <div className="pdf-ocr-doc-stage" ref={originalStageRef}>
-            <div className="pdf-ocr-doc-stack" style={{ zoom }}>
+          <div
+            className="pdf-ocr-doc-stage pdf-ocr-doc-stage--original"
+            ref={originalStageRef}
+          >
+            <div className="pdf-ocr-doc-stack" style={stackStyle}>
               {pageIndexes.length === 0 ? (
                 <div
                   className="pdf-ocr-paper pdf-ocr-paper--original"
-                  style={{ minHeight: "28rem", width: "min(36rem, 100%)" }}
+                  style={getPagePaperStyle(null)}
                 >
                   <p className="empty-state" style={{ padding: "1.5rem" }}>
                     Carregant document…
@@ -838,11 +960,7 @@ export function BackendDocumentTranslatePanel({
                       key={`original-${page}`}
                       className="pdf-ocr-paper pdf-ocr-paper--original"
                       data-translate-page={page}
-                      style={
-                        size
-                          ? undefined
-                          : { minHeight: "28rem", width: "min(36rem, 100%)" }
-                      }
+                      style={getPagePaperStyle(size)}
                     >
                       {preview ? (
                         <img
@@ -881,8 +999,22 @@ export function BackendDocumentTranslatePanel({
               </span>
             )}
           </h4>
-          <div className="pdf-ocr-doc-stage" ref={translationStageRef}>
-            <div className="pdf-ocr-doc-stack" style={{ zoom }}>
+          <div
+            className="pdf-ocr-doc-stage"
+            ref={translationStageRef}
+            aria-busy={translationPending}
+          >
+            {translationPending && (
+              <div className="pdf-ocr-doc-stage-loading" aria-live="polite">
+                <LoadingSpinner label={translationLoadingLabelText} />
+              </div>
+            )}
+            <div
+              className={`pdf-ocr-doc-stack${
+                translationPending ? " pdf-ocr-doc-stack--pending" : ""
+              }`}
+              style={stackStyle}
+            >
               {useLayout
                 ? pageIndexes.map((page) => {
                     const result = pageResults[page] ?? null;
@@ -891,13 +1023,7 @@ export function BackendDocumentTranslatePanel({
                     const layoutW = result?.width ?? size?.width ?? 1;
                     const layoutH = result?.height ?? size?.height ?? 1;
                     const hasLines = Boolean(result && result.lines.length > 0);
-                    const aspectStyle =
-                      size || result
-                        ? {
-                            width: "100%",
-                            aspectRatio: `${layoutW} / ${layoutH}`,
-                          }
-                        : { minHeight: "28rem", width: "100%" };
+                    const paperStyle = getPagePaperStyle(size);
 
                     return (
                       <div
@@ -906,7 +1032,7 @@ export function BackendDocumentTranslatePanel({
                         data-translate-page={page}
                         lang={targetLanguage}
                         dir={dir}
-                        style={aspectStyle}
+                        style={paperStyle}
                       >
                         {hasLines && result ? (
                           <>
@@ -949,31 +1075,13 @@ export function BackendDocumentTranslatePanel({
                               position: "relative",
                             }}
                           >
-                            {busy
-                              ? phase === "loading-layout"
-                                ? `Carregant layout… (pàg. ${page})`
-                                : `Generant traducció… (pàg. ${page})`
-                              : page === 1
-                                ? "Preparant layout…"
-                                : `Pàgina ${page}`}
+                            {page === 1 ? "Preparant layout…" : `Pàgina ${page}`}
                           </p>
                         )}
                       </div>
                     );
                   })
-                : !hasAnyText && busy ? (
-                    <div
-                      className="pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--plain-view"
-                      data-translate-page={1}
-                    >
-                      <p
-                        className="empty-state"
-                        style={{ padding: "1.5rem", position: "relative" }}
-                      >
-                        Traduint document…
-                      </p>
-                    </div>
-                  ) : !hasAnyText ? (
+                : !hasAnyText ? (
                     <div
                       className="pdf-ocr-paper pdf-ocr-paper--translation pdf-ocr-paper--plain-view"
                       data-translate-page={1}

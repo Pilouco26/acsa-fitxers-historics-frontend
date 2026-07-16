@@ -81,8 +81,6 @@ export function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewRotation, setPreviewRotation] = useState(0);
   const [translateOpen, setTranslateOpen] = useState(false);
-  const [pageTranslateOpen, setPageTranslateOpen] = useState(false);
-  const [layoutTranslateOpen, setLayoutTranslateOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editFolder, setEditFolder] = useState("");
   const listCardRef = useRef<HTMLDivElement>(null);
@@ -265,8 +263,6 @@ export function DocumentsPage() {
     if (routeDocumentId == null) {
       setDetailOpen(false);
       setTranslateOpen(false);
-      setPageTranslateOpen(false);
-      setLayoutTranslateOpen(false);
       return;
     }
 
@@ -358,8 +354,7 @@ export function DocumentsPage() {
     if (page > maxPage) setPage(maxPage);
   }, [total, page, pageSize]);
 
-  const translateFocusOpen =
-    translateOpen || pageTranslateOpen || layoutTranslateOpen;
+  const translateFocusOpen = translateOpen;
 
   const splitClassName = [
     "split-view",
@@ -367,7 +362,6 @@ export function DocumentsPage() {
     !detailVisible && "split-view--collapsed",
     detailVisible && "split-view--detail-open",
     detailVisible && translateFocusOpen && "split-view--translate-focus",
-    detailVisible && translateFocusOpen && "split-view--page-translate-open",
   ]
     .filter(Boolean)
     .join(" ");
@@ -392,8 +386,6 @@ export function DocumentsPage() {
     // In translation mode, first return to document detail (keep URL).
     if (translateFocusOpen) {
       setTranslateOpen(false);
-      setPageTranslateOpen(false);
-      setLayoutTranslateOpen(false);
       return;
     }
     if (detailOpen) {
@@ -409,8 +401,6 @@ export function DocumentsPage() {
     setEditFolder(documentFolder(selected));
     setPreviewRotation(0);
     setTranslateOpen(false);
-    setPageTranslateOpen(false);
-    setLayoutTranslateOpen(false);
   }, [selected?.id]);
 
   function rotatePreview() {
@@ -735,37 +725,9 @@ export function DocumentsPage() {
                   title="Mostrar el text traduït del document (resultat al costat)"
                   onClick={() => {
                     setTranslateOpen(true);
-                    setPageTranslateOpen(false);
-                    setLayoutTranslateOpen(false);
                   }}
                 >
                   Traduir
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-secondary"
-                  aria-pressed={false}
-                  title="Traduir la pàgina actual (resultat al costat)"
-                  onClick={() => {
-                    setPageTranslateOpen(true);
-                    setTranslateOpen(false);
-                    setLayoutTranslateOpen(false);
-                  }}
-                >
-                  Traduir pàgina
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-secondary"
-                  aria-pressed={false}
-                  title="DEV: recrear el layout del PDF amb el text traduït"
-                  onClick={() => {
-                    setLayoutTranslateOpen(true);
-                    setPageTranslateOpen(false);
-                    setTranslateOpen(false);
-                  }}
-                >
-                  DEV traduir
                 </button>
                 <button
                   type="button"
@@ -777,7 +739,7 @@ export function DocumentsPage() {
                 </button>
               </div>
               )}
-              {translateOpen && !pageTranslateOpen && !layoutTranslateOpen ? (
+              {translateOpen ? (
                 <BackendDocumentTranslatePanel
                   documentId={selected.id}
                   translatedText={selected.translated_text}
@@ -810,24 +772,6 @@ export function DocumentsPage() {
                   documentId={selected.id}
                   title={editName || selected.original_name || "PDF"}
                   rotation={previewRotation}
-                  documentLanguage={selected.language}
-                  pageTranslateOpen={pageTranslateOpen}
-                  onPageTranslateOpenChange={(open) => {
-                    setPageTranslateOpen(open);
-                    if (open) {
-                      setTranslateOpen(false);
-                      setLayoutTranslateOpen(false);
-                    }
-                  }}
-                  layoutTranslateOpen={layoutTranslateOpen}
-                  onLayoutTranslateOpenChange={(open) => {
-                    setLayoutTranslateOpen(open);
-                    if (open) {
-                      setTranslateOpen(false);
-                      setPageTranslateOpen(false);
-                    }
-                  }}
-                  showPageTranslateButton={false}
                 />
               )}
             </div>
