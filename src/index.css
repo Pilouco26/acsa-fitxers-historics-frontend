@@ -305,6 +305,7 @@ select {
 
 .card-panel > .pdf-preview-frame,
 .card-panel > .pdf-preview-shell,
+.card-panel > .media-preview-shell,
 .card-panel > .pdf-ocr-workspace {
   flex: 1;
   min-height: 0;
@@ -340,6 +341,7 @@ select {
   font-size: 0.9375rem;
   font-weight: 500;
   border: none;
+  text-decoration: none;
   transition: background 0.15s, opacity 0.15s;
 }
 
@@ -1121,6 +1123,7 @@ select {
 
 .split-detail-preview > .pdf-preview-frame,
 .split-detail-preview > .pdf-preview-shell,
+.split-detail-preview > .media-preview-shell,
 .split-detail-preview > .pdf-ocr-workspace {
   flex: 1;
   min-height: 0;
@@ -1404,6 +1407,179 @@ select {
 
 .pdf-preview-frame canvas:last-child {
   margin-bottom: 0;
+}
+
+/* Media (picture / video) preview */
+.media-preview-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.media-preview-shell--thumb {
+  flex: 0 0 auto;
+  width: 4.5rem;
+  height: 4.5rem;
+  min-height: 4.5rem;
+}
+
+.media-preview-media {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.media-preview-shell--thumb .media-preview-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-upload-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.media-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.media-upload-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.media-upload-meta strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-upload-meta span {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.media-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1rem;
+}
+
+.media-catalog-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.media-catalog-card:hover {
+  border-color: var(--color-accent, var(--color-border));
+}
+
+.media-catalog-card .media-preview-shell {
+  aspect-ratio: 1;
+  min-height: 8rem;
+  flex: none;
+}
+
+.media-catalog-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.media-catalog-card-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+.media-catalog-card-meta span {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.media-type-badge {
+  display: inline-block;
+  padding: 0.125rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+
+.media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.media-lightbox-inner {
+  position: relative;
+  max-width: min(96vw, 56rem);
+  max-height: 90vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.media-lightbox-inner .media-preview-shell {
+  max-height: calc(90vh - 3rem);
+  background: #111;
+}
+
+.media-lightbox-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.nav-link-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--color-accent, #c45c26);
+  color: #fff;
 }
 
 /* OCR + Chrome translate workspace (side-by-side) */

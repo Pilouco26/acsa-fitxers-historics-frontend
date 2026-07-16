@@ -21,6 +21,7 @@ import {
   DOCUMENT_STATUS_OK,
   DOCUMENT_STATUS_REVISIO,
 } from "@/constants/globals";
+import { looksLikePassthroughSource } from "@/constants/translateLanguages";
 import {
   applyListPanelFit,
   clearListPanelFit,
@@ -463,7 +464,8 @@ export function RevisioPage() {
             )}
 
             <div className="card card-panel split-detail-preview">
-              {translateOpen ? (
+              {translateOpen &&
+              !looksLikePassthroughSource(selected.language) ? (
                 <BackendDocumentTranslatePanel
                   documentId={selected.id}
                   translatedText={selected.translated_text}
@@ -499,6 +501,7 @@ export function RevisioPage() {
                       <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
                         Aquest document
                       </h3>
+                      {!looksLikePassthroughSource(selected.language) && (
                       <button
                         type="button"
                         className="btn btn-sm btn-secondary"
@@ -510,6 +513,7 @@ export function RevisioPage() {
                       >
                         Traduir
                       </button>
+                      )}
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -554,6 +558,7 @@ export function RevisioPage() {
                     <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
                       Vista prèvia
                     </h3>
+                    {!looksLikePassthroughSource(selected.language) && (
                     <button
                       type="button"
                       className="btn btn-sm btn-secondary"
@@ -565,6 +570,7 @@ export function RevisioPage() {
                     >
                       Traduir
                     </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"

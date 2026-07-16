@@ -378,3 +378,96 @@ export interface FolderListResponse {
   items: FolderItem[];
   total: number;
 }
+
+// --- Media (pictures & videos) ---
+
+export type MediaOwnerType = "FAMILIA" | "EMPRESA";
+export type MediaKind = "picture" | "video";
+
+export interface PictureOut {
+  id: number;
+  name: string;
+  relative_path: string;
+  date: string | null;
+  type: MediaOwnerType;
+  original_name: string | null;
+  proposed_name: string | null;
+  status: string | null;
+  summary: string | null;
+  location_guess: string | null;
+  ocr_text: string | null;
+  overall_conf: string | null;
+  error: string | null;
+  processed_at: string | null;
+}
+
+export type VideoOut = PictureOut & {
+  duration_sec: string | null;
+  keyframe_count: string | null;
+};
+
+export interface PictureListResponse {
+  items: PictureOut[];
+  total: number;
+}
+
+export interface VideoListResponse {
+  items: VideoOut[];
+  total: number;
+}
+
+export interface MediaFilters {
+  status?: string;
+  type?: MediaOwnerType;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MediaUpdate {
+  proposed_name?: string | null;
+  type?: MediaOwnerType;
+  date?: string | null;
+  summary?: string | null;
+  location_guess?: string | null;
+  approve?: boolean;
+}
+
+export interface MediaUploadOut {
+  filename: string;
+  relative_path: string;
+  status: string;
+  id: number;
+  media_kind: MediaKind;
+  type: MediaOwnerType;
+}
+
+export interface MediaBatchUploadOut {
+  files: MediaUploadOut[];
+}
+
+export interface MediaAnalyzeJobRequest {
+  source?: string;
+  require_review?: boolean;
+  dry_run?: boolean;
+  picture_ids?: number[];
+  video_ids?: number[];
+}
+
+export interface MediaAnalyzeResultFile {
+  kind: MediaKind;
+  id: number;
+  relative_path: string;
+  status?: string;
+  error?: string | null;
+}
+
+export interface MediaAnalyzeResult {
+  summary: {
+    total: number;
+    processed: number;
+    errors: number;
+    dry_run: boolean;
+  };
+  files: MediaAnalyzeResultFile[];
+}

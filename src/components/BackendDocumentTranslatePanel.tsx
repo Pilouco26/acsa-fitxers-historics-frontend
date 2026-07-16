@@ -20,10 +20,9 @@ import {
   PagePlainContent,
 } from "@/components/LetterTranslateContent";
 import {
+  looksLikePassthroughSource,
   normalizeTranslateLanguage,
   resolveDefaultTranslateLanguage,
-  TRANSLATE_LANGUAGE_OPTIONS,
-  type TranslateLanguageCode,
 } from "@/constants/translateLanguages";
 import {
   resolveLayoutPageResults,
@@ -64,11 +63,6 @@ function getPagePaperStyle(
     width: `${PAGE_DISPLAY_REM}rem`,
     aspectRatio: `${size.width} / ${size.height}`,
   };
-}
-
-function looksLikePassthroughSource(language?: string | null): boolean {
-  const normalized = normalizeTranslateLanguage(language);
-  return normalized === "ca" || normalized === "es";
 }
 
 function normalizeTranslatedPages(
@@ -206,9 +200,7 @@ export function BackendDocumentTranslatePanel({
   open: boolean;
   onTranslated?: (result: DocumentTranslateResponse) => void;
 }) {
-  const defaultTarget = resolveDefaultTranslateLanguage(documentLanguage);
-  const [targetLanguage, setTargetLanguage] =
-    useState<TranslateLanguageCode>(defaultTarget);
+  const targetLanguage = resolveDefaultTranslateLanguage(documentLanguage);
   const [showLetterhead, setShowLetterhead] = useState(true);
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState(0);
@@ -239,7 +231,6 @@ export function BackendDocumentTranslatePanel({
   const pagePreviewsRef = useRef<Record<number, string>>({});
   const pageResultsRef = useRef<Record<number, TranslatedPageResult>>({});
   const autoStartedRef = useRef(false);
-  const targetLanguageRef = useRef(targetLanguage);
   const translateAbortRef = useRef<AbortController | null>(null);
   const initialLayoutPagesRef = useRef(initialLayoutPages);
   const initialLayoutPdfUrlRef = useRef(initialLayoutPdfUrl);
@@ -253,7 +244,6 @@ export function BackendDocumentTranslatePanel({
   } | null>(null);
 
   pageNumberRef.current = pageNumber;
-  targetLanguageRef.current = targetLanguage;
   initialLayoutPagesRef.current = initialLayoutPages;
   initialLayoutPdfUrlRef.current = initialLayoutPdfUrl;
 
@@ -456,7 +446,7 @@ export function BackendDocumentTranslatePanel({
       setStatusMessage("Traduint…");
 
       const result = await translateDocument(documentId, {
-        target_language: targetLanguageRef.current,
+        target_language: targetLanguage,
         preserve_layout: true,
       });
 
@@ -491,10 +481,6 @@ export function BackendDocumentTranslatePanel({
     }
   }
 
-  async function runLayoutTranslate(force = false) {
-    await bootstrapLayout(force);
-  }
-
   useEffect(() => {
     if (!open) return;
     setShowLetterhead(true);
@@ -503,7 +489,6 @@ export function BackendDocumentTranslatePanel({
     setError(null);
     setStatusMessage(null);
     setPhase("idle");
-    setTargetLanguage(resolveDefaultTranslateLanguage(documentLanguage));
     setTextPages(normalizeTranslatedPages(translatedPages));
     setTextFallback(translatedText ?? "");
     setRotation(0);
@@ -872,34 +857,6 @@ export function BackendDocumentTranslatePanel({
             100%
           </button>
         </div>
-
-        <div className="pdf-ocr-workspace-langs">
-          <label className="pdf-ocr-workspace-lang">
-            <span>Destí</span>
-            <select
-              value={targetLanguage}
-              disabled={busy}
-              onChange={(e) =>
-                setTargetLanguage(e.target.value as TranslateLanguageCode)
-              }
-            >
-              {TRANSLATE_LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={busy || pageCount < 1}
-          onClick={() => void runLayoutTranslate(true)}
-        >
-          {busy ? "Traduint…" : "Traduir"}
-        </button>
 
         <button
           type="button"

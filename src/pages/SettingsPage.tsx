@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import {
   DEFAULT_GEMINI_MODEL,
   GEMINI_MODEL_OPTIONS,
+  normalizeGeminiModelId,
 } from "@/constants/geminiModels";
 
 export function SettingsPage() {
@@ -26,21 +27,20 @@ export function SettingsPage() {
     if (!data) return;
     setInputFolder(data.input_folder);
     setOutputFolder(data.output_folder);
-    setGeminiModel(data.gemini_model || DEFAULT_GEMINI_MODEL);
+    setGeminiModel(
+      normalizeGeminiModelId(data.gemini_model || DEFAULT_GEMINI_MODEL) ||
+        DEFAULT_GEMINI_MODEL,
+    );
   }, [data]);
 
-  const modelInList = GEMINI_MODEL_OPTIONS.some(
-    (option) => option.value === geminiModel,
-  );
-
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (model: string) =>
       updateSettings({
         input_folder: inputFolder,
         output_folder: outputFolder,
         gemini_api_key: geminiKey || undefined,
         gemini_api_key_backup: geminiKeyBackup || undefined,
-        gemini_model: geminiModel || undefined,
+        gemini_model: model || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
@@ -129,20 +129,23 @@ export function SettingsPage() {
 
         <div className="field">
           <label htmlFor="gemini-model">Model Gemini</label>
-          <select
+          <input
             id="gemini-model"
+            list="gemini-model-options"
             value={geminiModel}
+            placeholder="p. ex. gemini-2.5-flash"
             onChange={(e) => setGeminiModel(e.target.value)}
-          >
-            {!modelInList && geminiModel && (
-              <option value={geminiModel}>{geminiModel}</option>
-            )}
+            onBlur={() =>
+              setGeminiModel((current) => normalizeGeminiModelId(current))
+            }
+          />
+          <datalist id="gemini-model-options">
             {GEMINI_MODEL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
-          </select>
+          </datalist>
         </div>
 
         <div className="btn-row">
@@ -150,7 +153,11 @@ export function SettingsPage() {
             type="button"
             className="btn btn-primary"
             disabled={mutation.isPending}
-            onClick={() => mutation.mutate()}
+            onClick={() => {
+              const model = normalizeGeminiModelId(geminiModel);
+              setGeminiModel(model);
+              mutation.mutate(model);
+            }}
           >
             Desar configuració
           </button>

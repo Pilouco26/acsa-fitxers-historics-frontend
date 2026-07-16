@@ -6,6 +6,9 @@ import { ComparadorPage } from "@/pages/ComparadorPage";
 import { CorreusPage } from "@/pages/CorreusPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { EdicionsPage } from "@/pages/EdicionsPage";
+import { MediaCatalogPage } from "@/pages/MediaCatalogPage";
+import { MediaReviewPage } from "@/pages/MediaReviewPage";
+import { MediaUploadPage } from "@/pages/MediaUploadPage";
 import { RecuperacioPage } from "@/pages/RecuperacioPage";
 import { RevisioPage } from "@/pages/RevisioPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -16,6 +19,9 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: "/classificador", element: <ClassificadorPage /> },
   { path: "/revisio", element: <RevisioPage /> },
   { path: "/documents", element: <DocumentsPage /> },
+  { path: "/media", element: <MediaUploadPage /> },
+  { path: "/media/review", element: <MediaReviewPage /> },
+  { path: "/media/catalog", element: <MediaCatalogPage /> },
   { path: "/settings", element: <SettingsPage /> },
   { path: "/comparador", element: <ComparadorPage /> },
   { path: "/admin/analisi", element: <AnalisiPage /> },
@@ -30,6 +36,7 @@ const KNOWN_PATHS = new Set(ROUTES.map((r) => r.path));
 function resolveRoutePath(pathname: string): string | null {
   if (KNOWN_PATHS.has(pathname)) return pathname;
   if (pathname.startsWith("/documents/")) return "/documents";
+  if (pathname.startsWith("/media/catalog/")) return "/media/catalog";
   return null;
 }
 

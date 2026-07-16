@@ -98,3 +98,11 @@ export function resolveDefaultTranslateLanguage(
   if (source === "ca") return "es";
   return "ca";
 }
+
+/** Catalan / Spanish sources are already in a working language — skip translation UI. */
+export function looksLikePassthroughSource(
+  language?: string | null,
+): boolean {
+  const normalized = normalizeTranslateLanguage(language);
+  return normalized === "ca" || normalized === "es";
+}

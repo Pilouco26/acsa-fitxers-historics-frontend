@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { uploadBatch, ApiError, getSettings } from "@/api/client";
 
@@ -122,7 +123,11 @@ export function UploadPage() {
 
       />
 
-
+      <div className="btn-row" style={{ marginTop: "-0.5rem", marginBottom: "1rem" }}>
+        <Link to="/media" className="btn btn-secondary">
+          Pujar fotos i vídeos
+        </Link>
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -156,11 +161,6 @@ export function UploadPage() {
 
           </p>
 
-          {entradaFolder && (
-
-            <p className="scan-status">Destí al servidor: {entradaFolder}</p>
-
-          )}
 
         </div>
 

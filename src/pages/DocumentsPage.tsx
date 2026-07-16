@@ -26,6 +26,7 @@ import {
   measureListPanelChrome,
 } from "@/utils/listPanelLayout";
 import { DOCUMENT_LANGUAGE_OPTIONS } from "@/constants/documentFilters";
+import { looksLikePassthroughSource } from "@/constants/translateLanguages";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDocumentFilterOptions } from "@/hooks/useDocumentFilterOptions";
 import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
@@ -718,6 +719,7 @@ export function DocumentsPage() {
                 <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
                   Vista prèvia
                 </h3>
+                {!looksLikePassthroughSource(selected.language) && (
                 <button
                   type="button"
                   className="btn btn-sm btn-secondary"
@@ -729,6 +731,7 @@ export function DocumentsPage() {
                 >
                   Traduir
                 </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
@@ -739,7 +742,8 @@ export function DocumentsPage() {
                 </button>
               </div>
               )}
-              {translateOpen ? (
+              {translateOpen &&
+              !looksLikePassthroughSource(selected.language) ? (
                 <BackendDocumentTranslatePanel
                   documentId={selected.id}
                   translatedText={selected.translated_text}

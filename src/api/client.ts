@@ -28,10 +28,20 @@ import type {
   HealthOut,
   JobCreated,
   JobOut,
+  MediaAnalyzeJobRequest,
+  MediaBatchUploadOut,
+  MediaFilters,
+  MediaOwnerType,
+  MediaUpdate,
+  MediaUploadOut,
+  PictureListResponse,
+  PictureOut,
   RevertResponse,
   SettingsOut,
   SettingsUpdate,
   UploadOut,
+  VideoListResponse,
+  VideoOut,
 } from "./types";
 import toast from "react-hot-toast";
 import { getApiBaseUrl, getApiKey } from "@/config";
@@ -473,4 +483,189 @@ export function startEmailAnalyzeJob(body: EmailAnalyzeRequest): Promise<JobCrea
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }, { success: "Processament de correus iniciat", errorPrefix: "Error en el processament" });
+}
+
+// --- Media (pictures & videos) ---
+
+function mediaListQuery(params: MediaFilters = {}): string {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.type) qs.set("type", params.type);
+  if (params.q) qs.set("q", params.q);
+  if (params.limit != null) qs.set("limit", String(params.limit));
+  if (params.offset != null) qs.set("offset", String(params.offset));
+  const query = qs.toString();
+  return query ? `?${query}` : "";
+}
+
+export async function uploadMedia(
+  file: File,
+  ownerType: MediaOwnerType,
+): Promise<MediaUploadOut> {
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const qs = new URLSearchParams({ target: "media", type: ownerType });
+    const res = await fetch(`${BASE}/files/upload?${qs}`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: form,
+    });
+    if (!res.ok) throw new ApiError(res.status, await parseError(res));
+    const body = await res.json();
+    if (
+      body &&
+      typeof body === "object" &&
+      "status" in body &&
+      (body as { status?: unknown }).status === "error"
+    ) {
+      const message =
+        typeof (body as { message?: unknown }).message === "string"
+          ? (body as { message: string }).message
+          : "Error en la càrrega";
+      throw new ApiError(res.status, message);
+    }
+    const message =
+      body &&
+      typeof body === "object" &&
+      "message" in body &&
+      typeof (body as { message?: unknown }).message === "string"
+        ? (body as { message: string }).message
+        : undefined;
+    const out = unwrapEnvelope(body) as MediaUploadOut;
+    toast.success(message ?? "Càrrega completada");
+    return out;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    toast.error(`Error en la càrrega: ${msg}`);
+    throw err;
+  }
+}
+
+export async function uploadMediaBatch(
+  files: File[],
+  ownerType: MediaOwnerType,
+): Promise<MediaBatchUploadOut> {
+  try {
+    const form = new FormData();
+    for (const f of files) {
+      form.append("files", f);
+    }
+    const qs = new URLSearchParams({ target: "media", type: ownerType });
+    const res = await fetch(`${BASE}/files/upload/batch?${qs}`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: form,
+    });
+    if (!res.ok) throw new ApiError(res.status, await parseError(res));
+    const body = await res.json();
+    if (
+      body &&
+      typeof body === "object" &&
+      "status" in body &&
+      (body as { status?: unknown }).status === "error"
+    ) {
+      const message =
+        typeof (body as { message?: unknown }).message === "string"
+          ? (body as { message: string }).message
+          : "Error en la càrrega múltiple";
+      throw new ApiError(res.status, message);
+    }
+    const message =
+      body &&
+      typeof body === "object" &&
+      "message" in body &&
+      typeof (body as { message?: unknown }).message === "string"
+        ? (body as { message: string }).message
+        : undefined;
+    const out = unwrapEnvelope(body) as MediaBatchUploadOut;
+    toast.success(message ?? "Càrrega múltiple completada");
+    return out;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    toast.error(`Error en la càrrega múltiple: ${msg}`);
+    throw err;
+  }
+}
+
+export function listPictures(
+  params: MediaFilters = {},
+): Promise<PictureListResponse> {
+  return request<PictureListResponse>(`/pictures${mediaListQuery(params)}`);
+}
+
+export function listVideos(
+  params: MediaFilters = {},
+): Promise<VideoListResponse> {
+  return request<VideoListResponse>(`/videos${mediaListQuery(params)}`);
+}
+
+export function updatePicture(
+  id: number,
+  body: MediaUpdate,
+): Promise<PictureOut> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<PictureOut>(
+    `/pictures?${qs}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Desat", errorPrefix: "Error en desar" },
+  );
+}
+
+export function updateVideo(id: number, body: MediaUpdate): Promise<VideoOut> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<VideoOut>(
+    `/videos?${qs}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Desat", errorPrefix: "Error en desar" },
+  );
+}
+
+export function pictureFileUrl(id: number): string {
+  const qs = new URLSearchParams({ id: String(id) });
+  return `${BASE}/pictures/file?${qs}`;
+}
+
+export function videoFileUrl(id: number): string {
+  const qs = new URLSearchParams({ id: String(id) });
+  return `${BASE}/videos/file?${qs}`;
+}
+
+export function startMediaAnalyzeJob(
+  body: MediaAnalyzeJobRequest,
+): Promise<JobCreated> {
+  return request<JobCreated>(
+    "/jobs/media-analyze",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    {
+      success: "Anàlisi de mitjans iniciada",
+      errorPrefix: "Error en l'anàlisi",
+    },
+  );
+}
+
+/** Fetch a media/binary endpoint as a blob object URL (caller must revoke). */
+export async function fetchMediaObjectUrl(
+  url: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await fetch(url, {
+    headers: buildHeaders(),
+    signal,
+  });
+  if (!res.ok) throw new ApiError(res.status, await parseError(res));
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
