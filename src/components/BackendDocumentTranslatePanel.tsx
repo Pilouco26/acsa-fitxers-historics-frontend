@@ -5,6 +5,7 @@ import {
   buildHeaders,
   documentFileUrl,
   getDocument,
+  throwIfNotOk,
   translateDocument,
 } from "@/api/client";
 import type {
@@ -527,7 +528,7 @@ export function BackendDocumentTranslatePanel({
           headers: buildHeaders(),
           signal: ac.signal,
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await throwIfNotOk(res);
         const data = await res.arrayBuffer();
         if (cancelled) return;
 

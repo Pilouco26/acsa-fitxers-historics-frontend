@@ -7,8 +7,6 @@ import { CorreusPage } from "@/pages/CorreusPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { EdicionsPage } from "@/pages/EdicionsPage";
 import { MediaCatalogPage } from "@/pages/MediaCatalogPage";
-import { MediaReviewPage } from "@/pages/MediaReviewPage";
-import { MediaUploadPage } from "@/pages/MediaUploadPage";
 import { RecuperacioPage } from "@/pages/RecuperacioPage";
 import { RevisioPage } from "@/pages/RevisioPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -19,8 +17,6 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: "/classificador", element: <ClassificadorPage /> },
   { path: "/revisio", element: <RevisioPage /> },
   { path: "/documents", element: <DocumentsPage /> },
-  { path: "/media", element: <MediaUploadPage /> },
-  { path: "/media/review", element: <MediaReviewPage /> },
   { path: "/media/catalog", element: <MediaCatalogPage /> },
   { path: "/settings", element: <SettingsPage /> },
   { path: "/comparador", element: <ComparadorPage /> },
@@ -30,10 +26,16 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: "/recuperacio", element: <RecuperacioPage /> },
 ];
 
+const LEGACY_REDIRECTS: Record<string, string> = {
+  "/media": "/upload",
+  "/media/review": "/revisio",
+};
+
 const KNOWN_PATHS = new Set(ROUTES.map((r) => r.path));
 
 /** Map nested paths (e.g. `/documents/14523`) to their keep-alive page key. */
 function resolveRoutePath(pathname: string): string | null {
+  if (LEGACY_REDIRECTS[pathname]) return LEGACY_REDIRECTS[pathname];
   if (KNOWN_PATHS.has(pathname)) return pathname;
   if (pathname.startsWith("/documents/")) return "/documents";
   if (pathname.startsWith("/media/catalog/")) return "/media/catalog";
@@ -47,6 +49,7 @@ function resolveRoutePath(pathname: string): string | null {
 export function PersistentPages() {
   const location = useLocation();
   const path = location.pathname;
+  const legacyTarget = LEGACY_REDIRECTS[path];
   const activePath = path === "/" ? "/upload" : resolveRoutePath(path);
 
   const [mounted, setMounted] = useState<Set<string>>(() => {
@@ -64,6 +67,10 @@ export function PersistentPages() {
       return next;
     });
   }, [activePath]);
+
+  if (legacyTarget) {
+    return <Navigate to={legacyTarget} replace />;
+  }
 
   if (!activePath || !KNOWN_PATHS.has(activePath)) {
     return <Navigate to="/upload" replace />;

@@ -1,8 +1,9 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listPictures, listVideos } from "@/api/client";
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { MoreNavMenu } from "@/components/MoreNavMenu";
+import { useAuth } from "@/contexts/AuthContext";
 import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
 import { DOCUMENT_STATUS_REVISIO } from "@/constants/globals";
 import logoAcsa from "../../images/Logo_ACSA_02.png";
@@ -10,15 +11,11 @@ import logoAcsa from "../../images/Logo_ACSA_02.png";
 const mainNav = [
   { to: "/upload", label: "Pujar" },
   { to: "/classificador", label: "Classificador" },
-  { to: "/revisio", label: "Revisió" },
+  { to: "/revisio", label: "Revisió", badgeKey: "revisio" as const },
   { to: "/documents", label: "Documents" },
 ];
 
-const mediaNav = [
-  { to: "/media", label: "Pujar mitjans", end: true },
-  { to: "/media/review", label: "Revisió mitjans", badgeKey: "revisio" as const },
-  { to: "/media/catalog", label: "Catàleg mitjans" },
-];
+const mediaNav = [{ to: "/media/catalog", label: "Catàleg mitjans" }];
 
 const secondaryNav = [
   { to: "/comparador", label: "Comparador" },
@@ -67,9 +64,16 @@ function NavSection({
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const { job, jobId, isActive, isStarting, cancel } = useClassificadorJob();
   const onClassificador = location.pathname === "/classificador";
   const showGlobalJobProgress = !onClassificador && isActive;
+
+  function handleLogout() {
+    logout();
+    navigate("/login", { replace: true });
+  }
 
   const revisioCountQuery = useQuery({
     queryKey: ["media-revisio-count"],
@@ -92,12 +96,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <p>Fitxers històrics</p>
         </div>
         <nav className="sidebar-nav">
-          <NavSection title="Flux principal" items={mainNav} />
           <NavSection
-            title="Mitjans"
-            items={mediaNav}
+            title="Flux principal"
+            items={mainNav}
             badgeCount={revisioCountQuery.data}
           />
+          <NavSection title="Mitjans" items={mediaNav} />
         </nav>
         <div className="sidebar-footer">
           <MoreNavMenu
@@ -106,6 +110,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
               { title: "Administració", items: adminNav },
             ]}
           />
+          <button
+            type="button"
+            className="btn btn-secondary sidebar-logout"
+            onClick={handleLogout}
+          >
+            Tancar sessió
+          </button>
         </div>
       </aside>
       <div className="main-area">

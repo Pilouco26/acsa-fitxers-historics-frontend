@@ -116,6 +116,72 @@ select {
   padding: 0.75rem;
   border-top: 1px solid var(--color-border-light);
   background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sidebar-logout {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Login portal */
+.login-page {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(var(--color-accent-rgb), 0.08), transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(var(--color-accent-rgb), 0.06), transparent 45%),
+    var(--color-bg);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 24rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 2rem 1.75rem 1.75rem;
+}
+
+.login-brand {
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+
+.login-brand-logo {
+  display: block;
+  height: 2.75rem;
+  width: auto;
+  margin: 0 auto 1rem;
+}
+
+.login-brand h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.login-brand p {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.login-form .field:last-of-type {
+  margin-bottom: 1.25rem;
+}
+
+.login-submit {
+  width: 100%;
+  justify-content: center;
+  min-height: var(--touch-min);
 }
 
 .more-nav {
@@ -747,6 +813,18 @@ select {
 
 .drop-zone strong {
   color: var(--color-accent);
+}
+
+.drop-zone-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
+.drop-zone-actions .btn {
+  cursor: pointer;
 }
 
 /* Progress */

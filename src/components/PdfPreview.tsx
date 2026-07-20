@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { buildHeaders, documentFileUrl, storedFileUrl } from "@/api/client";
+import { buildHeaders, documentFileUrl, storedFileUrl, throwIfNotOk } from "@/api/client";
 
 const activeReleases = new Map<string, () => void>();
 
@@ -106,8 +106,8 @@ export function PdfPreview({
       headers: buildHeaders(),
       signal: ac.signal,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      .then(async (res) => {
+        await throwIfNotOk(res);
         return res.arrayBuffer();
       })
       .then((data) => {

@@ -9,6 +9,7 @@ import {
 } from "@/api/client";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { BackendDocumentTranslatePanel } from "@/components/BackendDocumentTranslatePanel";
+import { MediaReviewPanel } from "@/components/MediaReviewPanel";
 import { PageHeader } from "@/components/PageHeader";
 import {
   PdfPreview,
@@ -32,6 +33,8 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
 import type { DocumentOut } from "@/api/types";
 
+type ContentKind = "documents" | "media";
+
 function isRepeatedDocument(doc: DocumentOut): boolean {
   return (
     doc.status === "repeated" ||
@@ -51,6 +54,7 @@ function duplicateLabel(path: string | null | undefined): string {
 export function RevisioPage() {
   const queryClient = useQueryClient();
 
+  const [contentKind, setContentKind] = useState<ContentKind>("documents");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(0);
@@ -88,13 +92,14 @@ export function RevisioPage() {
         offset: page * pageSize,
       }),
     placeholderData: keepPreviousData,
+    enabled: contentKind === "documents",
   });
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
 
   usePrefetchDocumentListPages({
-    enabled: true,
+    enabled: contentKind === "documents",
     page,
     pageSize,
     total,
@@ -120,7 +125,7 @@ export function RevisioPage() {
   useEffect(() => {
     // Keep rows-per-page responsive without introducing scrollbars.
     // The list panel unmounts in preview mode, so we must re-attach when it returns.
-    if (detailVisible) return;
+    if (contentKind !== "documents" || detailVisible) return;
 
     const cardEl = listCardRef.current;
     const tableEl = tableAreaRef.current;
@@ -146,7 +151,7 @@ export function RevisioPage() {
       ro.disconnect();
       clearListPanelFit(tableEl);
     };
-  }, [detailVisible, isLoading, isFetching]);
+  }, [contentKind, detailVisible, isLoading, isFetching]);
 
   useEffect(() => {
     if (total <= 0) return;
@@ -276,16 +281,48 @@ export function RevisioPage() {
       <PageHeader
         title="Revisió"
         description={
-          <>
-            Revisió de documents classificats. Cliqueu un fitxer per previsualitzar el PDF, ajustar el
-            nom/resum i aprovar-lo.{" "}
-            <span className="revisio-repeated-legend">
-              El fons vermell indica possibles documents repetits.
-            </span>
-          </>
+          contentKind === "documents" ? (
+            <>
+              Revisió de documents classificats. Cliqueu un fitxer per
+              previsualitzar el PDF, ajustar el nom/resum i aprovar-lo.{" "}
+              <span className="revisio-repeated-legend">
+                El fons vermell indica possibles documents repetits.
+              </span>
+            </>
+          ) : (
+            "Reviseu què passa a l'escena i on (resum i ubicació), ajusteu el nom i aproveu al catàleg."
+          )
         }
       />
 
+      <div className="field" style={{ marginBottom: "1rem" }}>
+        <label>Tipus de contingut</label>
+        <div
+          className="segmented-control"
+          role="group"
+          aria-label="Tipus de contingut"
+        >
+          <button
+            type="button"
+            className={contentKind === "documents" ? "active" : undefined}
+            onClick={() => setContentKind("documents")}
+          >
+            Documents
+          </button>
+          <button
+            type="button"
+            className={contentKind === "media" ? "active" : undefined}
+            onClick={() => setContentKind("media")}
+          >
+            Fotos / vídeos
+          </button>
+        </div>
+      </div>
+
+      {contentKind === "media" ? (
+        <MediaReviewPanel />
+      ) : (
+        <>
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className={splitClassName}>
@@ -594,6 +631,8 @@ export function RevisioPage() {
           </>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

@@ -2,7 +2,6 @@
 set -eu
 
 export API_UPSTREAM="${API_UPSTREAM:-http://api:8000}"
-export API_KEY="${API_KEY:-}"
 export HTTPS_EXTERNAL_PORT="${HTTPS_EXTERNAL_PORT:-8443}"
 
 CERT_DIR=/etc/nginx/certs
@@ -23,15 +22,8 @@ if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
 fi
 
 # Runtime config for the SPA (Vite env vars are fixed at image build time).
-escape_js() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
-}
-
-API_KEY_ESCAPED="$(escape_js "$API_KEY")"
 cat > /usr/share/nginx/html/config.js <<EOF
-window.__ACSA_CONFIG__ = {
-  apiKey: "${API_KEY_ESCAPED}"
-};
+window.__ACSA_CONFIG__ = {};
 EOF
 
 envsubst '${API_UPSTREAM} ${HTTPS_EXTERNAL_PORT}' \

@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMatch, useNavigate } from "react-router-dom";
 import {
+  buildHeaders,
   deleteDocument,
   getDocument,
+  documentFileUrl,
   listDocuments,
   listFolders,
   moveDocument,
+  throwIfNotOk,
   updateDocument,
 } from "@/api/client";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
@@ -15,6 +18,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { BackendDocumentTranslatePanel } from "@/components/BackendDocumentTranslatePanel";
 import { PdfPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
+import toast from "react-hot-toast";
 import {
   DOCUMENT_LIST_PAGE_SIZE,
   DOCUMENT_STATUS_OK,
@@ -44,6 +48,11 @@ function sortIndicator(active: boolean, dir: "asc" | "desc") {
 
 function documentFolder(doc: DocumentOut): string {
   return doc.company_folder ?? "";
+}
+
+function sanitizeFilename(name: string): string {
+  // Windows-invalid characters: \ / : * ? " < > |
+  return name.replace(/[\\/:*?"<>|]/g, "_").trim();
 }
 
 export function DocumentsPage() {
@@ -84,6 +93,7 @@ export function DocumentsPage() {
   const [translateOpen, setTranslateOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editFolder, setEditFolder] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
   const listCardRef = useRef<HTMLDivElement>(null);
   const tableAreaRef = useRef<HTMLDivElement>(null);
 
@@ -408,6 +418,43 @@ export function DocumentsPage() {
     setPreviewRotation((deg) => (deg + 90) % 360);
   }
 
+  async function downloadSelectedDocument() {
+    if (!selected || isDownloading) return;
+    setIsDownloading(true);
+
+    const baseName = selected.proposed_name ?? selected.original_name ?? "document";
+    const filename = `${sanitizeFilename(baseName) || "document"}.pdf`;
+
+    try {
+      const res = await fetch(documentFileUrl(selected.id), {
+        headers: buildHeaders({ Accept: "application/pdf" }),
+      });
+
+      await throwIfNotOk(res);
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "No s'ha pogut descarregar el PDF.",
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   function toggleSort(field: DocumentOrderBy) {
     if (orderBy === field) {
       setOrderDir((dir) => (dir === "asc" ? "desc" : "asc"));
@@ -489,7 +536,7 @@ export function DocumentsPage() {
   return (
     <div className="page-fill">
       <PageHeader
-        title="Documents"
+        title="Documents Classificats"
         description="Documents aprovats a l'arxiu. Cliqui un fitxer per previsualitzar el PDF."
       />
 
@@ -732,6 +779,33 @@ export function DocumentsPage() {
                   Traduir
                 </button>
                 )}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  title="Descarregar"
+                  aria-label="Descarregar"
+                  disabled={isDownloading}
+                  onClick={() => {
+                    void downloadSelectedDocument();
+                  }}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"

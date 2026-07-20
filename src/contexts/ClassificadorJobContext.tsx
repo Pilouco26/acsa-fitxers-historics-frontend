@@ -12,12 +12,15 @@ import {
   assignDocuments,
   cancelJob,
   startAnalyzeJob,
+  startMediaAnalyzeJob,
   ApiError,
-  API_KEY_UNAUTHORIZED_MESSAGE,
+  UNAUTHORIZED_MESSAGE,
   isUnauthorizedError,
 } from "@/api/client";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import type { JobOut } from "@/api/types";
+
+export type ClassificadorContentKind = "documents" | "media";
 
 interface ClassificadorJobContextValue {
   jobId: string | null;
@@ -28,7 +31,8 @@ interface ClassificadorJobContextValue {
   isAssigning: boolean;
   busy: boolean;
   isActive: boolean;
-  startAnalyze: () => void;
+  contentKind: ClassificadorContentKind | null;
+  startAnalyze: (kind: ClassificadorContentKind) => void;
   cancel: () => void;
 }
 
@@ -41,11 +45,13 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [contentKind, setContentKind] =
+    useState<ClassificadorContentKind | null>(null);
   const assignedForJobRef = useRef<string | null>(null);
 
   const stopForUnauthorized = useCallback(() => {
     setAuthError(true);
-    setError(API_KEY_UNAUTHORIZED_MESSAGE);
+    setError(UNAUTHORIZED_MESSAGE);
     setJobId(null);
     setJob(null);
     setIsAssigning(false);
@@ -66,6 +72,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
 
   useEffect(() => {
     if (!jobId || job?.status !== "completed") return;
+    if (contentKind !== "documents") return;
     if (assignedForJobRef.current === jobId) return;
     assignedForJobRef.current = jobId;
 
@@ -100,9 +107,9 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [jobId, job?.status, stopForUnauthorized]);
+  }, [jobId, job?.status, contentKind, stopForUnauthorized]);
 
-  const analyzeMutation = useMutation({
+  const analyzeDocumentsMutation = useMutation({
     mutationFn: () =>
       startAnalyzeJob({
         source: "inbox",
@@ -114,6 +121,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     onSuccess: (data) => {
       assignedForJobRef.current = null;
       setIsAssigning(false);
+      setContentKind("documents");
       setAuthError(false);
       setJobId(data.job_id);
       setJob(null);
@@ -122,7 +130,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     onError: (err) => {
       if (isUnauthorizedError(err)) {
         setAuthError(true);
-        setError(API_KEY_UNAUTHORIZED_MESSAGE);
+        setError(UNAUTHORIZED_MESSAGE);
         return;
       }
       setAuthError(false);
@@ -132,13 +140,61 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     },
   });
 
-  const isStarting = analyzeMutation.isPending;
+  const analyzeMediaMutation = useMutation({
+    mutationFn: () =>
+      startMediaAnalyzeJob({
+        source: "media",
+        require_review: true,
+        dry_run: false,
+      }),
+    onSuccess: (data) => {
+      assignedForJobRef.current = null;
+      setIsAssigning(false);
+      setContentKind("media");
+      setAuthError(false);
+      setJobId(data.job_id);
+      setJob(null);
+      setError(null);
+    },
+    onError: (err) => {
+      if (isUnauthorizedError(err)) {
+        setAuthError(true);
+        setError(UNAUTHORIZED_MESSAGE);
+        return;
+      }
+      if (err instanceof ApiError && err.status === 409) {
+        setAuthError(false);
+        setError(
+          "Ja hi ha una anàlisi en curs. Espereu que acabi o cancel·leu-la.",
+        );
+        return;
+      }
+      setAuthError(false);
+      setError(
+        err instanceof ApiError ? err.message : "Error en iniciar l'anàlisi",
+      );
+    },
+  });
+
+  const isStarting =
+    analyzeDocumentsMutation.isPending || analyzeMediaMutation.isPending;
   const busy =
     isStarting ||
     isAssigning ||
     job?.status === "pending" ||
     job?.status === "running";
   const isActive = busy;
+
+  const startAnalyze = useCallback(
+    (kind: ClassificadorContentKind) => {
+      if (kind === "media") {
+        analyzeMediaMutation.mutate();
+      } else {
+        analyzeDocumentsMutation.mutate();
+      }
+    },
+    [analyzeDocumentsMutation, analyzeMediaMutation],
+  );
 
   const cancel = useCallback(() => {
     if (jobId) {
@@ -157,7 +213,8 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
         isAssigning,
         busy,
         isActive,
-        startAnalyze: () => analyzeMutation.mutate(),
+        contentKind,
+        startAnalyze,
         cancel,
       }}
     >

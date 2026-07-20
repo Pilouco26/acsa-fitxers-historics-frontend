@@ -5,6 +5,7 @@ import {
   listPictures,
   listVideos,
   pictureFileUrl,
+  throwIfNotOk,
   videoFileUrl,
 } from "@/api/client";
 import { MediaPreview } from "@/components/MediaPreview";
@@ -79,7 +80,11 @@ export function MediaCatalogPage() {
         ? pictureFileUrl(item.id)
         : videoFileUrl(item.id);
     const res = await fetch(url, { headers: buildHeaders() });
-    if (!res.ok) return;
+    try {
+      await throwIfNotOk(res);
+    } catch {
+      return;
+    }
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");

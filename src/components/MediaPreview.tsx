@@ -3,6 +3,7 @@ import {
   buildHeaders,
   pictureFileUrl,
   storedFileUrl,
+  throwIfNotOk,
   videoFileUrl,
 } from "@/api/client";
 import type { MediaKind } from "@/api/types";
@@ -19,7 +20,7 @@ type MediaPreviewProps = {
 };
 
 /**
- * Image/video preview via authenticated blob fetch (supports X-API-Key).
+ * Image/video preview via authenticated blob fetch (Bearer token).
  */
 export function MediaPreview({
   kind,
@@ -62,8 +63,8 @@ export function MediaPreview({
       headers: buildHeaders(),
       signal: ac.signal,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      .then(async (res) => {
+        await throwIfNotOk(res);
         return res.blob();
       })
       .then((blob) => {

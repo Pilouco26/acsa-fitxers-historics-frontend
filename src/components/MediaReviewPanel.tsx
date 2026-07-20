@@ -9,7 +9,6 @@ import {
   updateVideo,
 } from "@/api/client";
 import { MediaPreview } from "@/components/MediaPreview";
-import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { DOCUMENT_STATUS_REVISIO } from "@/constants/globals";
 import type { MediaOwnerType, PictureOut, VideoOut } from "@/api/types";
@@ -32,7 +31,7 @@ function shortText(value: string | null | undefined, max = 80): string {
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
-export function MediaReviewPage() {
+export function MediaReviewPanel() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<MediaTab>("picture");
   const [selected, setSelected] = useState<SelectedMedia | null>(null);
@@ -202,12 +201,7 @@ export function MediaReviewPage() {
         : null;
 
   return (
-    <div className="page-fill">
-      <PageHeader
-        title="Revisió de mitjans"
-        description="Reviseu què passa a l'escena i on (resum i ubicació), ajusteu el nom i aproveu al catàleg."
-      />
-
+    <>
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className={splitClassName}>
@@ -450,7 +444,6 @@ export function MediaReviewPage() {
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }
-

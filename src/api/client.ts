@@ -44,7 +44,12 @@ import type {
   VideoOut,
 } from "./types";
 import toast from "react-hot-toast";
-import { getApiBaseUrl, getApiKey } from "@/config";
+import {
+  clearAccessToken,
+  getAccessToken,
+  getApiBaseUrl,
+  setAccessToken,
+} from "@/config";
 
 const BASE = getApiBaseUrl();
 
@@ -58,11 +63,21 @@ export class ApiError extends Error {
   }
 }
 
-export const API_KEY_UNAUTHORIZED_MESSAGE =
-  "Accés no autoritzat. La clau API podria estar mal configurada. Poseu-vos en contacte amb un administrador.";
+export const UNAUTHORIZED_MESSAGE =
+  "Sessió caducada o no autoritzada. Torneu a iniciar sessió.";
 
 export function isUnauthorizedError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 401;
+}
+
+let redirectingToLogin = false;
+
+export function clearSessionAndRedirectToLogin(): void {
+  clearAccessToken();
+  if (redirectingToLogin) return;
+  if (window.location.pathname === "/login") return;
+  redirectingToLogin = true;
+  window.location.assign("/login");
 }
 
 export function buildHeaders(extra?: HeadersInit): HeadersInit {
@@ -70,11 +85,22 @@ export function buildHeaders(extra?: HeadersInit): HeadersInit {
     Accept: "application/json",
     ...(extra as Record<string, string>),
   };
-  const apiKey = getApiKey();
-  if (apiKey) {
-    headers["X-API-Key"] = apiKey;
+  const token = getAccessToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
   }
   return headers;
+}
+
+export async function throwIfNotOk(
+  res: Response,
+  options?: { skipAuthRedirect?: boolean },
+): Promise<void> {
+  if (res.ok) return;
+  if (res.status === 401 && !options?.skipAuthRedirect) {
+    clearSessionAndRedirectToLogin();
+  }
+  throw new ApiError(res.status, await parseError(res));
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -113,15 +139,14 @@ async function request<T>(
   path: string,
   init?: RequestInit,
   toastCfg?: RequestToast,
+  options?: { skipAuthRedirect?: boolean },
 ): Promise<T> {
   try {
     const res = await fetch(`${BASE}${path}`, {
       ...init,
       headers: buildHeaders(init?.headers),
     });
-    if (!res.ok) {
-      throw new ApiError(res.status, await parseError(res));
-    }
+    await throwIfNotOk(res, options);
     if (res.status === 204) {
       if (toastCfg && toastCfg.success) toast.success(toastCfg.success);
       return undefined as T;
@@ -138,6 +163,44 @@ async function request<T>(
     }
     throw err;
   }
+}
+
+// --- Auth ---
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type?: string;
+}
+
+export async function login(body: LoginRequest): Promise<LoginResponse> {
+  const out = await request<LoginResponse>(
+    "/auth/login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: body.username.trim().toLowerCase(),
+        password: body.password,
+      }),
+    },
+    false,
+    { skipAuthRedirect: true },
+  );
+  if (!out?.access_token) {
+    throw new ApiError(500, "Resposta d'inici de sessió invàlida");
+  }
+  setAccessToken(out.access_token);
+  redirectingToLogin = false;
+  return out;
+}
+
+export function logout(): void {
+  clearAccessToken();
 }
 
 // --- Health ---
@@ -157,7 +220,7 @@ export async function uploadFile(file: File): Promise<UploadOut> {
       headers: buildHeaders(),
       body: form,
     });
-    if (!res.ok) throw new ApiError(res.status, await parseError(res));
+    await throwIfNotOk(res);
     const body = await res.json();
     const message =
       body &&
@@ -187,7 +250,7 @@ export async function uploadBatch(files: File[]): Promise<BatchUploadOut> {
       headers: buildHeaders(),
       body: form,
     });
-    if (!res.ok) throw new ApiError(res.status, await parseError(res));
+    await throwIfNotOk(res);
     const body = await res.json();
     const message =
       body &&
@@ -396,7 +459,7 @@ export async function compareFile(file: File): Promise<CompareResponse> {
       headers: buildHeaders(),
       body: form,
     });
-    if (!res.ok) throw new ApiError(res.status, await parseError(res));
+    await throwIfNotOk(res);
     const out = unwrapEnvelope(await res.json());
     toast.success("Comparació completada");
     return out;
@@ -511,7 +574,7 @@ export async function uploadMedia(
       headers: buildHeaders(),
       body: form,
     });
-    if (!res.ok) throw new ApiError(res.status, await parseError(res));
+    await throwIfNotOk(res);
     const body = await res.json();
     if (
       body &&
@@ -557,7 +620,7 @@ export async function uploadMediaBatch(
       headers: buildHeaders(),
       body: form,
     });
-    if (!res.ok) throw new ApiError(res.status, await parseError(res));
+    await throwIfNotOk(res);
     const body = await res.json();
     if (
       body &&
@@ -683,7 +746,7 @@ export async function fetchMediaObjectUrl(
     headers: buildHeaders(),
     signal,
   });
-  if (!res.ok) throw new ApiError(res.status, await parseError(res));
+  await throwIfNotOk(res);
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }

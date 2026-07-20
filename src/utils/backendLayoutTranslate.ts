@@ -1,4 +1,4 @@
-import { buildHeaders, storedFileUrl } from "@/api/client";
+import { buildHeaders, storedFileUrl, throwIfNotOk } from "@/api/client";
 import type { LayoutLine, LayoutPage } from "@/api/types";
 import type { TranslatedPageResult } from "@/utils/ocrTranslateHelpers";
 
@@ -62,9 +62,7 @@ export async function fetchStoredFileObjectUrl(
     headers: buildHeaders({ Accept: "*/*" }),
     signal,
   });
-  if (!res.ok) {
-    throw new Error(`No s'ha pogut carregar el fitxer (HTTP ${res.status}).`);
-  }
+  await throwIfNotOk(res);
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
