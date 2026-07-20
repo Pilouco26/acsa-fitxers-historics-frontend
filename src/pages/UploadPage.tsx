@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { uploadBatch, ApiError, getSettings } from "@/api/client";
+import { uploadBatch, ApiError } from "@/api/client";
 
 import { PageHeader } from "@/components/PageHeader";
 
@@ -41,16 +41,6 @@ export function UploadPage() {
   const [uploaded, setUploaded] = useState<UploadOut[]>([]);
 
   const [error, setError] = useState<string | null>(null);
-
-
-
-  const settingsQuery = useQuery({
-
-    queryKey: ["settings"],
-
-    queryFn: getSettings,
-
-  });
 
 
 
@@ -104,12 +94,6 @@ export function UploadPage() {
     },
     [mutation],
   );
-
-
-
-  const entradaFolder = settingsQuery.data?.input_folder;
-
-
 
   return (
 
