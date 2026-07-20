@@ -7,8 +7,8 @@ import { fontPxFromHeightRatio } from "@/utils/ocrFontGroups";
 import type { OcrBBox, OcrTextAlign, OcrWord } from "@/utils/ocrImage";
 
 /**
- * Absolutely positioned OCR translation line. Prefers the typographic group's
- * median height; only shrinks when the translation cannot fit the box.
+ * Absolutely positioned OCR translation line. Uses typographic group height as
+ * a starting size, then always shrinks to fit the bbox (width + height).
  */
 export function FittingOcrTranslatedLine({
   text,
@@ -64,7 +64,8 @@ export function FittingOcrTranslatedLine({
   }
 
   const heightPct = Math.max(((bbox.y1 - bbox.y0) / layoutH) * 100, 0.85);
-  const maxHeightPct = heightPct * 1.12;
+  const needsWrap = lengthRatio > 1.08 || text.trim().length > 44;
+  const maxHeightPct = needsWrap ? heightPct * 1.7 : heightPct * 1.28;
   const top = (bbox.y0 / layoutH) * 100;
 
   useLayoutEffect(() => {
@@ -76,22 +77,25 @@ export function FittingOcrTranslatedLine({
       const pageHeight = page?.clientHeight ?? el.clientHeight;
       const maxHeightPx = Math.max(10, (maxHeightPct / 100) * pageHeight);
 
-      if (fontHeightRatio != null && fontHeightRatio > 0) {
-        // Group median already scaled by OCR_FONT_GROUP_FIT — keep members uniform.
-        const groupPx = fontPxFromHeightRatio(fontHeightRatio, pageHeight);
-        el.style.fontSize = `${groupPx}px`;
-        setFontSizePx(groupPx);
-        return;
-      }
-
-      const initialPx = ocrLineFontSizePx(
-        bbox,
-        layoutH,
-        pageHeight,
-        words,
-        text.trim().length,
+      const bboxCapPx = Math.max(
+        8,
+        ((bbox.y1 - bbox.y0) / Math.max(layoutH, 1)) * pageHeight * 0.98,
       );
-      const minPx = align === "center" ? Math.max(11, initialPx * 0.75) : 10;
+
+      let initialPx =
+        fontHeightRatio != null && fontHeightRatio > 0
+          ? fontPxFromHeightRatio(fontHeightRatio, pageHeight)
+          : ocrLineFontSizePx(
+              bbox,
+              layoutH,
+              pageHeight,
+              words,
+              text.trim().length,
+            );
+
+      initialPx = Math.min(initialPx, bboxCapPx);
+
+      const minPx = needsWrap ? 8 : align === "center" ? Math.max(10, initialPx * 0.7) : 9;
       const fitted = fitOcrLineFontSizePx(el, initialPx, maxHeightPx, minPx);
       setFontSizePx(fitted);
     };
@@ -115,12 +119,15 @@ export function FittingOcrTranslatedLine({
     fontHeightRatio,
     maxHeightPct,
     width,
+    needsWrap,
   ]);
 
   return (
     <p
       ref={ref}
-      className={`pdf-ocr-page-line pdf-ocr-page-line--${align}`}
+      className={`pdf-ocr-page-line pdf-ocr-page-line--${align}${
+        needsWrap ? " pdf-ocr-page-line--wrap" : ""
+      }`}
       data-ocr-align={align}
       data-font-group={fontGroupId ?? undefined}
       style={{

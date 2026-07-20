@@ -980,7 +980,11 @@ export function BackendDocumentTranslatePanel({
                     const layoutW = result?.width ?? size?.width ?? 1;
                     const layoutH = result?.height ?? size?.height ?? 1;
                     const hasLines = Boolean(result && result.lines.length > 0);
-                    const paperStyle = getPagePaperStyle(size);
+                    const paperStyle = getPagePaperStyle(
+                      result
+                        ? { width: result.width, height: result.height }
+                        : size,
+                    );
 
                     return (
                       <div

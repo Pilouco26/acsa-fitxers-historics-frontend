@@ -15,7 +15,7 @@ const mainNav = [
 ];
 
 const mediaNav = [
-  { to: "/media", label: "Pujar mitjans" },
+  { to: "/media", label: "Pujar mitjans", end: true },
   { to: "/media/review", label: "Revisió mitjans", badgeKey: "revisio" as const },
   { to: "/media/catalog", label: "Catàleg mitjans" },
 ];
@@ -38,7 +38,7 @@ function NavSection({
   badgeCount,
 }: {
   title: string;
-  items: { to: string; label: string; badgeKey?: "revisio" }[];
+  items: { to: string; label: string; badgeKey?: "revisio"; end?: boolean }[];
   badgeCount?: number;
 }) {
   return (
@@ -48,6 +48,7 @@ function NavSection({
         <NavLink
           key={item.to}
           to={item.to}
+          end={item.end}
           className={({ isActive }) =>
             `nav-link${isActive ? " active" : ""}`
           }

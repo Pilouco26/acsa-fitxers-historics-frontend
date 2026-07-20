@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import {
   ApiError,
   cancelJob,
+  deletePicture,
+  deleteVideo,
   startMediaAnalyzeJob,
   uploadMediaBatch,
 } from "@/api/client";
@@ -104,6 +106,26 @@ export function MediaUploadPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (file: MediaUploadOut) =>
+      file.media_kind === "video"
+        ? deleteVideo(file.id)
+        : deletePicture(file.id),
+    onSuccess: (_data, file) => {
+      setUploaded((prev) =>
+        prev.filter(
+          (f) => !(f.id === file.id && f.media_kind === file.media_kind),
+        ),
+      );
+      setError(null);
+    },
+    onError: (err) => {
+      setError(
+        err instanceof ApiError ? err.message : "Error en eliminar el fitxer",
+      );
+    },
+  });
+
   const handleFiles = useCallback(
     (fileList: FileList | null) => {
       if (!fileList?.length) return;
@@ -135,6 +157,9 @@ export function MediaUploadPage() {
 
   const analyzeBusy = busy || analyzeMutation.isPending;
   const canAnalyze = uploaded.length > 0 && !analyzeBusy;
+  const deletingId = deleteMutation.isPending
+    ? deleteMutation.variables
+    : null;
 
   async function handleCancel() {
     if (!jobId) return;
@@ -248,35 +273,60 @@ export function MediaUploadPage() {
             Fitxers pujats ({uploaded.length})
           </h3>
           <div className="media-upload-list">
-            {uploaded.map((f) => (
-              <div key={`${f.media_kind}-${f.id}`} className="media-upload-row">
-                {f.media_kind === "picture" ? (
-                  <MediaPreview
-                    kind="picture"
-                    id={f.id}
-                    filePath={f.relative_path}
-                    title={f.filename}
-                    thumb
-                  />
-                ) : (
-                  <div
-                    className="media-preview-shell media-preview-shell--thumb"
-                    aria-hidden
+            {uploaded.map((f) => {
+              const isDeleting =
+                deletingId?.id === f.id &&
+                deletingId?.media_kind === f.media_kind;
+              return (
+                <div
+                  key={`${f.media_kind}-${f.id}`}
+                  className="media-upload-row"
+                >
+                  <button
+                    type="button"
+                    className="media-upload-thumb"
+                    disabled={analyzeBusy || isDeleting}
+                    onClick={() => deleteMutation.mutate(f)}
+                    aria-label={`Eliminar ${f.filename}`}
+                    title="Eliminar"
                   >
-                    <span style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
-                      Vídeo
+                    {f.media_kind === "picture" ? (
+                      <MediaPreview
+                        kind="picture"
+                        id={f.id}
+                        filePath={f.relative_path}
+                        title={f.filename}
+                        thumb
+                      />
+                    ) : (
+                      <div
+                        className="media-preview-shell media-preview-shell--thumb"
+                        aria-hidden
+                      >
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "var(--color-text-secondary)",
+                          }}
+                        >
+                          Vídeo
+                        </span>
+                      </div>
+                    )}
+                    <span className="media-upload-thumb-remove" aria-hidden>
+                      ×
+                    </span>
+                  </button>
+                  <div className="media-upload-meta">
+                    <strong>{f.filename}</strong>
+                    <span>
+                      {f.media_kind === "picture" ? "Imatge" : "Vídeo"} · id{" "}
+                      {f.id} · {f.type}
                     </span>
                   </div>
-                )}
-                <div className="media-upload-meta">
-                  <strong>{f.filename}</strong>
-                  <span>
-                    {f.media_kind === "picture" ? "Imatge" : "Vídeo"} · id {f.id}{" "}
-                    · {f.type}
-                  </span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="btn-row" style={{ marginTop: "1rem" }}>

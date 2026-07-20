@@ -43,18 +43,19 @@ export function MediaReviewPage() {
   const [editDate, setEditDate] = useState("");
   const [editSummary, setEditSummary] = useState("");
   const [editLocation, setEditLocation] = useState("");
-  const [ocrOpen, setOcrOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const picturesQuery = useQuery({
     queryKey: ["pictures", DOCUMENT_STATUS_REVISIO],
     queryFn: () =>
       listPictures({ status: DOCUMENT_STATUS_REVISIO, limit: 50 }),
+    enabled: tab === "picture",
   });
 
   const videosQuery = useQuery({
     queryKey: ["videos", DOCUMENT_STATUS_REVISIO],
     queryFn: () => listVideos({ status: DOCUMENT_STATUS_REVISIO, limit: 50 }),
+    enabled: tab === "video",
   });
 
   const items: MediaItem[] =
@@ -81,9 +82,17 @@ export function MediaReviewPage() {
     setEditDate(item.date ?? "");
     setEditSummary(item.summary ?? "");
     setEditLocation(item.location_guess ?? "");
-    setOcrOpen(false);
     setDetailOpen(true);
     setError(null);
+  }
+
+  function selectTab(next: MediaTab) {
+    if (next === tab) {
+      if (next === "picture") void picturesQuery.refetch();
+      else void videosQuery.refetch();
+      return;
+    }
+    setTab(next);
   }
 
   useEffect(() => {
@@ -220,7 +229,7 @@ export function MediaReviewPage() {
                   role="tab"
                   aria-selected={tab === "picture"}
                   className={tab === "picture" ? "active" : undefined}
-                  onClick={() => setTab("picture")}
+                  onClick={() => selectTab("picture")}
                 >
                   Imatges
                 </button>
@@ -229,7 +238,7 @@ export function MediaReviewPage() {
                   role="tab"
                   aria-selected={tab === "video"}
                   className={tab === "video" ? "active" : undefined}
-                  onClick={() => setTab("video")}
+                  onClick={() => selectTab("video")}
                 >
                   Vídeos
                 </button>
@@ -409,28 +418,6 @@ export function MediaReviewPage() {
                   </div>
                 </div>
               )}
-
-              <details
-                open={ocrOpen}
-                onToggle={(e) =>
-                  setOcrOpen((e.target as HTMLDetailsElement).open)
-                }
-              >
-                <summary style={{ cursor: "pointer", marginBottom: "0.5rem" }}>
-                  Text OCR
-                </summary>
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    fontSize: "0.8125rem",
-                    maxHeight: "12rem",
-                    overflow: "auto",
-                  }}
-                >
-                  {selectedItem.ocr_text?.trim() || "—"}
-                </pre>
-              </details>
 
               <div className="btn-row">
                 <button

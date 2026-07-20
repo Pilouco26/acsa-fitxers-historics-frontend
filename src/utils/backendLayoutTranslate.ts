@@ -1,14 +1,43 @@
 import { buildHeaders, storedFileUrl } from "@/api/client";
-import type { LayoutPage } from "@/api/types";
+import type { LayoutLine, LayoutPage } from "@/api/types";
 import type { TranslatedPageResult } from "@/utils/ocrTranslateHelpers";
+
+/**
+ * Drop empty lines and orphan tails left when MT merged a sentence into the
+ * previous line but the source OCR row was not removed (e.g. "us know.").
+ */
+export function filterRedundantLayoutLines(lines: LayoutLine[]): LayoutLine[] {
+  const out: LayoutLine[] = [];
+
+  for (const line of lines) {
+    const translated = line.translated.trim();
+    if (!translated) continue;
+
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      line.translated === line.text &&
+      translated.length <= 28 &&
+      prev.translated.trim() !== prev.text.trim()
+    ) {
+      continue;
+    }
+
+    out.push(line);
+  }
+
+  return out;
+}
 
 /** Map backend layout page fields onto the client overlay shape (URL still relative). */
 export function mapLayoutPage(page: LayoutPage): TranslatedPageResult {
+  const lines = filterRedundantLayoutLines(page.lines);
+
   return {
     width: page.width,
     height: page.height,
     backgroundUrl: storedFileUrl(page.background_url),
-    lines: page.lines.map((line) => ({
+    lines: lines.map((line) => ({
       text: line.text,
       translated: line.translated,
       bbox: line.bbox,

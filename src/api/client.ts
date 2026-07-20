@@ -629,6 +629,24 @@ export function updateVideo(id: number, body: MediaUpdate): Promise<VideoOut> {
   );
 }
 
+export function deletePicture(id: number): Promise<void> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<void>(
+    `/pictures?${qs}`,
+    { method: "DELETE" },
+    { success: "Eliminat", errorPrefix: "Error en eliminar" },
+  );
+}
+
+export function deleteVideo(id: number): Promise<void> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<void>(
+    `/videos?${qs}`,
+    { method: "DELETE" },
+    { success: "Eliminat", errorPrefix: "Error en eliminar" },
+  );
+}
+
 export function pictureFileUrl(id: number): string {
   const qs = new URLSearchParams({ id: String(id) });
   return `${BASE}/pictures/file?${qs}`;
