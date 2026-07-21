@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { listDocuments, listFolders, listPictures, listVideos } from "@/api/client";
+import { listFolders, listPictures, listVideos } from "@/api/client";
+import { DOCUMENT_STATUS_OK } from "@/constants/globals";
 import {
   documentsFolderPickPath,
   documentsListPath,
@@ -11,6 +12,7 @@ import {
   mediaCatalogPath,
 } from "@/constants/folders";
 import { includesFolded } from "@/utils/foldSearchText";
+import { fetchFilteredDocumentCount } from "@/utils/documentListTotal";
 import { HubBackButton } from "@/components/HubBackButton";
 
 export type HubFolderCapabilities = {
@@ -353,25 +355,39 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
     [folders, folderName],
   );
 
-  const { data: docData } = useQuery({
+  const { data: docCount } = useQuery({
     queryKey: ["pick-count-docs", folderName],
-    queryFn: () => listDocuments({ folder: folderName, limit: 0, status: "approved" }),
+    queryFn: () =>
+      fetchFilteredDocumentCount({
+        status: DOCUMENT_STATUS_OK,
+        folder: folderName,
+      }),
     enabled: !isLoading && (folder?.hasDocuments ?? true),
   });
   const { data: picData } = useQuery({
     queryKey: ["pick-count-pics", folderName],
-    queryFn: () => listPictures({ folder: folderName, limit: 0, status: "approved" }),
+    queryFn: () =>
+      listPictures({
+        folder: folderName,
+        limit: 1,
+        status: DOCUMENT_STATUS_OK,
+      }),
     enabled: !isLoading && (folder?.hasPictures ?? true),
   });
   const { data: vidData } = useQuery({
     queryKey: ["pick-count-vids", folderName],
-    queryFn: () => listVideos({ folder: folderName, limit: 0, status: "approved" }),
+    queryFn: () =>
+      listVideos({
+        folder: folderName,
+        limit: 1,
+        status: DOCUMENT_STATUS_OK,
+      }),
     enabled: !isLoading && (folder?.hasVideos ?? true),
   });
 
-  const docCount = docData?.total ?? null;
   const picCount = picData?.total ?? null;
   const vidCount = vidData?.total ?? null;
+  const docTotal = docCount ?? null;
 
   const options = useMemo(() => {
     type PickOption = {
@@ -386,7 +402,7 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
         {
           key: "documents",
           label: "Documents",
-          count: docCount,
+          count: docTotal,
           path: documentsListPath(folderName),
         },
         {
@@ -410,7 +426,7 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
       next.push({
         key: "documents",
         label: "Documents",
-        count: docCount,
+        count: docTotal,
         path: documentsListPath(folder.name),
       });
     }
@@ -431,7 +447,7 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
       });
     }
     return next;
-  }, [folder, folderName, docCount, picCount, vidCount]);
+  }, [folder, folderName, docTotal, picCount, vidCount]);
 
   const singleOptionPath = options.length === 1 ? options[0].path : null;
   const didAutoSkipRef = useRef(false);

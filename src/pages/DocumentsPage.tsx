@@ -646,14 +646,7 @@ export function DocumentsPage() {
 
   return (
     <div className="page-fill">
-      {detailVisible ? (
-        <div className="page-header-with-back">
-          <HubBackButton onClick={() => navigate("/documents")} />
-          {pageHeader}
-        </div>
-      ) : (
-        pageHeader
-      )}
+      {pageHeader}
 
       <div className={splitClassName}>
         {!detailVisible && (

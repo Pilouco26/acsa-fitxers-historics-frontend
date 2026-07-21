@@ -1562,28 +1562,50 @@ select {
   flex: 0 0 auto;
 }
 
+.pdf-preview-toolbar-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pdf-preview-toolbar-label {
+  min-width: 3.5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pdf-preview-toolbar .btn {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+  padding: 0.5rem 0.75rem;
+}
+
 .pdf-preview-frame {
   position: relative;
   flex: 1;
   min-height: 0;
   width: 100%;
   overflow: auto;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   /* Reserve scrollbar space up front so it appearing/disappearing never
      changes the element's content width (avoids ResizeObserver loops). */
   scrollbar-gutter: stable;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-sm);
+  background: var(--color-surface);
 }
 
+.pdf-preview-canvas,
 .pdf-preview-frame canvas {
   display: block;
-  width: 100%;
+  margin: 0 auto;
   height: auto;
-  margin-bottom: 0.5rem;
-}
-
-.pdf-preview-frame canvas:last-child {
-  margin-bottom: 0;
+  max-width: none;
 }
 
 /* Media (picture / video) preview */
@@ -2635,15 +2657,6 @@ select {
 
 /* Compact width — phones (HIG compact size class) */
 @media (max-width: 600px) {
-  .btn {
-    min-height: var(--touch-min);
-  }
-
-  .segmented-control button {
-    min-height: var(--touch-min);
-    padding: 0.625rem 0.5rem;
-  }
-
   .btn-row {
     flex-direction: column;
   }
@@ -2681,6 +2694,26 @@ select {
   }
 }
 
+/* Touch targets — tablets / phones by width, and any coarse pointer (Surface, etc.) */
+@media (max-width: 900px), (pointer: coarse) {
+  .btn,
+  .btn-sm {
+    min-height: var(--touch-min);
+  }
+
+  .segmented-control button {
+    min-height: var(--touch-min);
+    padding: 0.625rem 0.5rem;
+  }
+
+  .split-detail-toggle {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0.35rem 0.5rem;
+    justify-content: center;
+  }
+}
+
 /* Regular width — tablets & narrow desktops (HIG regular, stacked layout) */
 @media (max-width: 900px) {
   .split-view {
@@ -2697,10 +2730,11 @@ select {
 
   .split-view--detail-open .split-detail-toggle {
     width: auto;
-    min-height: auto;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
     order: 1;
     align-self: center;
-    padding: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
   }
 
   .split-view--detail-open .split-detail-edit {
@@ -2716,6 +2750,21 @@ select {
     order: 3;
   }
 
+  .split-detail-preview > .pdf-preview-shell,
+  .split-detail-compare-pane > .pdf-preview-shell,
+  .preview-collapsible > .pdf-preview-shell {
+    min-height: min(70vh, 32rem);
+  }
+
+  .split-detail-preview > .pdf-preview-frame,
+  .split-detail-compare-pane > .pdf-preview-frame,
+  .preview-collapsible > .pdf-preview-frame,
+  .split-detail-preview .pdf-preview-frame,
+  .split-detail-compare-pane .pdf-preview-frame,
+  .preview-collapsible .pdf-preview-frame {
+    min-height: min(60vh, 28rem);
+  }
+
   .split-detail-compare {
     grid-template-columns: 1fr;
     min-height: 70vh;
@@ -2727,8 +2776,9 @@ select {
 
   .split-detail-toggle {
     width: auto;
-    min-height: auto;
-    padding: 0.5rem 0;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0.5rem 0.75rem;
     align-self: center;
   }
 

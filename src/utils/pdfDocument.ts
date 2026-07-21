@@ -41,23 +41,34 @@ export async function openPdfDocument(
   }
 }
 
-/** Render one 1-based page to a canvas (high DPI for OCR). */
-export async function renderPdfPageToCanvas(
+/** Render one 1-based page onto an existing canvas. */
+export async function renderPdfPageOntoCanvas(
   pdf: PDFDocumentProxy,
   pageNumber: number,
-  options?: { scale?: number; signal?: AbortSignal },
-): Promise<HTMLCanvasElement> {
+  canvas: HTMLCanvasElement,
+  options?: { scale?: number; rotation?: number; signal?: AbortSignal },
+): Promise<void> {
   options?.signal?.throwIfAborted();
   const page = await pdf.getPage(pageNumber);
   const scale = options?.scale ?? 2;
-  const viewport = page.getViewport({ scale });
-  const canvas = document.createElement("canvas");
+  const rotation = ((options?.rotation ?? 0) % 360 + 360) % 360;
+  const viewport = page.getViewport({ scale, rotation });
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No s'ha pogut crear el canvas per renderitzar la pàgina.");
-
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvas, canvasContext: ctx, viewport }).promise;
   options?.signal?.throwIfAborted();
+}
+
+/** Render one 1-based page to a canvas (high DPI for OCR). */
+export async function renderPdfPageToCanvas(
+  pdf: PDFDocumentProxy,
+  pageNumber: number,
+  options?: { scale?: number; rotation?: number; signal?: AbortSignal },
+): Promise<HTMLCanvasElement> {
+  const canvas = document.createElement("canvas");
+  await renderPdfPageOntoCanvas(pdf, pageNumber, canvas, options);
   return canvas;
 }

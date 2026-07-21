@@ -1,49 +1,41 @@
 import { useEffect, useState } from "react";
+import { PdfCanvasViewer } from "@/components/PdfPreview";
 
 export function FilePdfPreview({ file, title }: { file: File; title: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
-
-  const iframeSrc = objectUrl
-    ? `${objectUrl}#toolbar=0&navpanes=0&scrollbar=0`
-    : null;
+  const [data, setData] = useState<ArrayBuffer | null>(null);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
     setError(null);
-    setObjectUrl(null);
+    setData(null);
 
-    const url = URL.createObjectURL(file);
-    setObjectUrl(url);
-    setLoading(false);
+    void file
+      .arrayBuffer()
+      .then((buffer) => {
+        if (!active) return;
+        setData(buffer);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setError("No s'ha pogut carregar la vista prèvia del PDF.");
+        setLoading(false);
+      });
 
     return () => {
-      URL.revokeObjectURL(url);
+      active = false;
     };
-  }, [file, title]);
-
-  if (error) {
-    return <div className="alert alert-error">{error}</div>;
-  }
+  }, [file]);
 
   return (
-    <div className="pdf-preview-shell">
-      {loading && <p className="empty-state">Carregant PDF…</p>}
-      <div
-        className="pdf-preview-frame"
-        aria-busy={loading}
-        aria-label={title}
-        hidden={loading}
-      >
-        {iframeSrc && (
-          <iframe
-            title={title}
-            src={iframeSrc}
-            style={{ width: "100%", height: "100%", border: 0, display: "block" }}
-          />
-        )}
-      </div>
-    </div>
+    <PdfCanvasViewer
+      data={data}
+      title={title}
+      loading={loading}
+      error={error}
+    />
   );
 }
