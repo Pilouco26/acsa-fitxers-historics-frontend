@@ -3,10 +3,10 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { buildHeaders, documentFileUrl, storedFileUrl, throwIfNotOk } from "@/api/client";
 import { openPdfDocument, renderPdfPageOntoCanvas } from "@/utils/pdfDocument";
 
-const ZOOM_MIN = 0.5;
+const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 3;
 const ZOOM_STEP = 0.25;
-const ZOOM_DEFAULT = 1;
+const FIT_PADDING_PX = 8;
 
 const activeReleases = new Map<string, () => void>();
 
@@ -26,6 +26,20 @@ function clampZoom(value: number): number {
 
 function normalizeRotation(rotation: number): number {
   return ((rotation % 360) + 360) % 360;
+}
+
+async function measureFitZoom(
+  pdf: PDFDocumentProxy,
+  pageNumber: number,
+  rotation: number,
+  frame: HTMLElement,
+): Promise<number> {
+  const page = await pdf.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 1, rotation });
+  const availW = Math.max(1, frame.clientWidth - FIT_PADDING_PX);
+  const availH = Math.max(1, frame.clientHeight - FIT_PADDING_PX);
+  if (viewport.width <= 0 || viewport.height <= 0) return 1;
+  return clampZoom(Math.min(availW / viewport.width, availH / viewport.height));
 }
 
 /** Force-close any in-flight preview fetch / render for a document id. */
@@ -58,6 +72,7 @@ type PdfCanvasViewerProps = {
 
 /**
  * Touch-friendly single-page PDF canvas viewer with zoom / page controls.
+ * Defaults to fitting the whole page in the preview frame.
  */
 export function PdfCanvasViewer({
   data,
@@ -67,12 +82,17 @@ export function PdfCanvasViewer({
   error: externalError = null,
 }: PdfCanvasViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
   const renderGenRef = useRef(0);
+  const fitGenRef = useRef(0);
+  const stickToFitRef = useRef(true);
+  const fitZoomRef = useRef(1);
 
   const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
-  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const [zoom, setZoom] = useState(1);
+  const [fitZoom, setFitZoom] = useState(1);
   const [opening, setOpening] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +107,10 @@ export function PdfCanvasViewer({
 
     setPage(1);
     setPageCount(0);
-    setZoom(ZOOM_DEFAULT);
+    setZoom(1);
+    setFitZoom(1);
+    fitZoomRef.current = 1;
+    stickToFitRef.current = true;
     setError(null);
 
     const previous = pdfRef.current;
@@ -133,6 +156,39 @@ export function PdfCanvasViewer({
     };
   }, [data]);
 
+  // Fit whole page into the frame on open, page/rotation change, and resize.
+  useLayoutEffect(() => {
+    const pdf = pdfRef.current;
+    const frame = frameRef.current;
+    if (!pdf || !frame || pageCount < 1) return;
+
+    let cancelled = false;
+    const gen = ++fitGenRef.current;
+
+    const runFit = () => {
+      void measureFitZoom(pdf, page, rotationDeg, frame).then((nextFit) => {
+        if (cancelled || gen !== fitGenRef.current) return;
+        fitZoomRef.current = nextFit;
+        setFitZoom(nextFit);
+        if (stickToFitRef.current) {
+          setZoom(nextFit);
+        }
+      });
+    };
+
+    runFit();
+
+    const ro = new ResizeObserver(() => {
+      runFit();
+    });
+    ro.observe(frame);
+
+    return () => {
+      cancelled = true;
+      ro.disconnect();
+    };
+  }, [page, pageCount, rotationDeg, data]);
+
   useLayoutEffect(() => {
     const pdf = pdfRef.current;
     const canvas = canvasRef.current;
@@ -153,7 +209,6 @@ export function PdfCanvasViewer({
     })
       .then(() => {
         if (gen !== renderGenRef.current) return;
-        // CSS size follows zoom; backing store already includes DPR.
         canvas.style.width = `${Math.ceil(canvas.width / dpr)}px`;
         canvas.style.height = `${Math.ceil(canvas.height / dpr)}px`;
         setRendering(false);
@@ -170,11 +225,22 @@ export function PdfCanvasViewer({
     };
   }, [page, pageCount, zoom, rotationDeg, data]);
 
+  const bumpZoom = (delta: number) => {
+    stickToFitRef.current = false;
+    setZoom((z) => clampZoom(z + delta));
+  };
+
+  const resetToFit = () => {
+    stickToFitRef.current = true;
+    setZoom(fitZoomRef.current);
+  };
+
   if (displayError) {
     return <div className="alert alert-error">{displayError}</div>;
   }
 
   const showLoading = busy && pageCount < 1;
+  const atFit = Math.abs(zoom - fitZoom) < 0.005;
 
   return (
     <div className="pdf-preview-shell">
@@ -187,7 +253,10 @@ export function PdfCanvasViewer({
               type="button"
               className="btn btn-secondary btn-sm"
               disabled={busy || page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => {
+                stickToFitRef.current = true;
+                setPage((p) => Math.max(1, p - 1));
+              }}
               aria-label="Pàgina anterior"
             >
               ‹
@@ -199,7 +268,10 @@ export function PdfCanvasViewer({
               type="button"
               className="btn btn-secondary btn-sm"
               disabled={busy || page >= pageCount}
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              onClick={() => {
+                stickToFitRef.current = true;
+                setPage((p) => Math.min(pageCount, p + 1));
+              }}
               aria-label="Pàgina següent"
             >
               ›
@@ -211,7 +283,7 @@ export function PdfCanvasViewer({
               type="button"
               className="btn btn-secondary btn-sm"
               disabled={busy || zoom <= ZOOM_MIN}
-              onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
+              onClick={() => bumpZoom(-ZOOM_STEP)}
               aria-label="Reduir zoom"
             >
               −
@@ -223,7 +295,7 @@ export function PdfCanvasViewer({
               type="button"
               className="btn btn-secondary btn-sm"
               disabled={busy || zoom >= ZOOM_MAX}
-              onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
+              onClick={() => bumpZoom(ZOOM_STEP)}
               aria-label="Augmentar zoom"
             >
               +
@@ -231,16 +303,17 @@ export function PdfCanvasViewer({
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={busy || zoom === ZOOM_DEFAULT}
-              onClick={() => setZoom(ZOOM_DEFAULT)}
+              disabled={busy || atFit}
+              onClick={resetToFit}
             >
-              Restablir
+              Ajustar
             </button>
           </div>
         </div>
       )}
 
       <div
+        ref={frameRef}
         className="pdf-preview-frame"
         aria-busy={busy}
         aria-label={title}

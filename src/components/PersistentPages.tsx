@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { AnalisiPage } from "@/pages/AnalisiPage";
 import { ClassificadorPage } from "@/pages/ClassificadorPage";
@@ -13,19 +13,19 @@ import { RevisioPage } from "@/pages/RevisioPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UploadPage } from "@/pages/UploadPage";
 
-const ROUTES: { path: string; element: ReactNode }[] = [
-  { path: "/upload", element: <UploadPage /> },
-  { path: "/classificador", element: <ClassificadorPage /> },
-  { path: "/revisio", element: <RevisioPage /> },
-  { path: "/documents", element: <DocumentsPage /> },
-  { path: "/media/catalog", element: <MediaCatalogPage /> },
-  { path: "/notes", element: <NotesPage /> },
-  { path: "/settings", element: <SettingsPage /> },
-  { path: "/comparador", element: <ComparadorPage /> },
-  { path: "/admin/analisi", element: <AnalisiPage /> },
-  { path: "/admin/edicions", element: <EdicionsPage /> },
-  { path: "/correus", element: <CorreusPage /> },
-  { path: "/recuperacio", element: <RecuperacioPage /> },
+const ROUTES: { path: string; Page: ComponentType }[] = [
+  { path: "/upload", Page: UploadPage },
+  { path: "/classificador", Page: ClassificadorPage },
+  { path: "/revisio", Page: RevisioPage },
+  { path: "/documents", Page: DocumentsPage },
+  { path: "/media/catalog", Page: MediaCatalogPage },
+  { path: "/notes", Page: NotesPage },
+  { path: "/settings", Page: SettingsPage },
+  { path: "/comparador", Page: ComparadorPage },
+  { path: "/admin/analisi", Page: AnalisiPage },
+  { path: "/admin/edicions", Page: EdicionsPage },
+  { path: "/correus", Page: CorreusPage },
+  { path: "/recuperacio", Page: RecuperacioPage },
 ];
 
 const LEGACY_REDIRECTS: Record<string, string> = {
@@ -80,7 +80,7 @@ export function PersistentPages() {
 
   return (
     <>
-      {ROUTES.map(({ path: routePath, element }) => {
+      {ROUTES.map(({ path: routePath, Page }) => {
         if (!mounted.has(routePath)) return null;
         const active = activePath === routePath;
         return (
@@ -93,7 +93,7 @@ export function PersistentPages() {
             }
             aria-hidden={!active}
           >
-            {element}
+            <Page />
           </div>
         );
       })}

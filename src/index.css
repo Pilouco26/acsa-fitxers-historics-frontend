@@ -2657,6 +2657,22 @@ select {
 
 /* Compact width — phones (HIG compact size class) */
 @media (max-width: 600px) {
+  .sidebar-brand {
+    padding: 0.5rem var(--content-padding);
+  }
+
+  .sidebar-nav {
+    gap: 0.125rem;
+    padding: 0 0.35rem 0.35rem;
+  }
+
+  .nav-link,
+  .more-nav-trigger {
+    min-height: 2rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.75rem;
+  }
+
   .btn-row {
     flex-direction: column;
   }
@@ -2691,6 +2707,16 @@ select {
 
   .card-panel > .table-responsive--no-scroll {
     max-height: none;
+  }
+
+  .card-panel > .pdf-preview-shell,
+  .split-detail-preview > .pdf-preview-shell {
+    min-height: min(65vh, 28rem);
+  }
+
+  .card-panel .pdf-preview-frame,
+  .split-detail-preview .pdf-preview-frame {
+    min-height: min(55vh, 24rem);
   }
 }
 
@@ -2835,9 +2861,11 @@ select {
   .more-nav-trigger {
     width: auto;
     white-space: nowrap;
-    min-height: var(--touch-min);
+    min-height: 2.25rem;
     display: inline-flex;
     align-items: center;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8125rem;
   }
 
   .more-nav-dropdown {
@@ -2864,9 +2892,11 @@ select {
   .nav-link {
     white-space: nowrap;
     flex-shrink: 0;
-    min-height: var(--touch-min);
+    min-height: 2.25rem;
     display: inline-flex;
     align-items: center;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8125rem;
   }
 
   .main-area {

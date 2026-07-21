@@ -193,7 +193,7 @@ export async function login(body: LoginRequest): Promise<LoginResponse> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: body.username.trim().toLowerCase(),
+        username: body.username.trim(),
         password: body.password,
       }),
     },
