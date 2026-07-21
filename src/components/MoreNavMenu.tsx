@@ -4,7 +4,12 @@ import { NavLink, useLocation } from "react-router-dom";
 type NavItem = { to: string; label: string };
 type NavSection = { title: string; items: NavItem[] };
 
-export function MoreNavMenu({ sections }: { sections: NavSection[] }) {
+type MoreNavMenuProps = {
+  sections: NavSection[];
+  onLogout?: () => void;
+};
+
+export function MoreNavMenu({ sections, onLogout }: MoreNavMenuProps) {
   const { pathname } = useLocation();
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -77,9 +82,23 @@ export function MoreNavMenu({ sections }: { sections: NavSection[] }) {
               ))}
             </div>
           ))}
+          {onLogout ? (
+            <div className="more-nav-logout">
+              <button
+                type="button"
+                role="menuitem"
+                className="nav-link more-nav-logout-btn"
+                onClick={() => {
+                  setOpen(false);
+                  onLogout();
+                }}
+              >
+                Tancar sessió
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
-

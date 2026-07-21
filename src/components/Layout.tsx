@@ -111,14 +111,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               { title: "Eines", items: secondaryNav },
               { title: "Administració", items: adminNav },
             ]}
+            onLogout={handleLogout}
           />
-          <button
-            type="button"
-            className="btn btn-secondary sidebar-logout"
-            onClick={handleLogout}
-          >
-            Tancar sessió
-          </button>
         </div>
       </aside>
       <div className="main-area">

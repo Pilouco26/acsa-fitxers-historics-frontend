@@ -50,16 +50,39 @@ export async function renderPdfPageOntoCanvas(
 ): Promise<void> {
   options?.signal?.throwIfAborted();
   const page = await pdf.getPage(pageNumber);
+  options?.signal?.throwIfAborted();
   const scale = options?.scale ?? 2;
   const rotation = ((options?.rotation ?? 0) % 360 + 360) % 360;
   const viewport = page.getViewport({ scale, rotation });
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("No s'ha pogut crear el canvas per renderitzar la pàgina.");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-  options?.signal?.throwIfAborted();
+
+  // pdf.js v6: pass `canvas` only (not canvasContext). Cancel any in-flight
+  // render on this canvas via the returned task when the signal aborts.
+  const renderTask = page.render({ canvas, viewport });
+  const onAbort = () => {
+    void renderTask.cancel();
+  };
+  options?.signal?.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    await renderTask.promise;
+    options?.signal?.throwIfAborted();
+  } finally {
+    options?.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/** True when a render was intentionally cancelled (superseded / aborted). */
+export function isPdfRenderCancelled(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (!err || typeof err !== "object") return false;
+  const name = "name" in err ? String((err as { name: unknown }).name) : "";
+  return (
+    name === "AbortError" ||
+    name === "RenderingCancelledException" ||
+    name === "AbortException"
+  );
 }
 
 /** Render one 1-based page to a canvas (high DPI for OCR). */

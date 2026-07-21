@@ -36,6 +36,7 @@ import { DOCUMENT_LANGUAGE_OPTIONS } from "@/constants/documentFilters";
 import { looksLikePassthroughSource } from "@/constants/translateLanguages";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDocumentFilterOptions } from "@/hooks/useDocumentFilterOptions";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
 import type { DocumentOrderBy, DocumentOut } from "@/api/types";
 import { fetchAllDocuments } from "@/utils/fetchAllDocuments";
@@ -43,6 +44,8 @@ import { hasDocumentListFilters } from "@/utils/documentListTotal";
 import { matchesDocumentFilters } from "@/utils/matchDocumentFilters";
 import { sortDocuments } from "@/utils/sortDocuments";
 import { buildArchiveFolderSuggestions } from "@/utils/folderSuggestions";
+
+const COMPACT_VIEWPORT = "(max-width: 600px)";
 
 function sortIndicator(active: boolean, dir: "asc" | "desc") {
   if (!active) return "↕";
@@ -128,6 +131,7 @@ export function DocumentsPage() {
   const tableAreaRef = useRef<HTMLDivElement>(null);
   const hubScrollTopRef = useRef(0);
   const [hubSearch, setHubSearch] = useState("");
+  const isCompact = useMediaQuery(COMPACT_VIEWPORT);
 
   useEffect(() => {
     if (showListChrome) return;
@@ -135,6 +139,11 @@ export function DocumentsPage() {
     setSelected(null);
     setTranslateOpen(false);
   }, [showListChrome]);
+
+  useEffect(() => {
+    if (!isCompact) return;
+    setPageSize(DOCUMENT_LIST_PAGE_SIZE);
+  }, [isCompact]);
 
   const folderSuggestions = useMemo(
     () =>
@@ -379,11 +388,17 @@ export function DocumentsPage() {
   useEffect(() => {
     // Keep rows-per-page responsive without introducing scrollbars.
     // The list panel unmounts in preview mode, so we must re-attach when it returns.
+    // On compact viewports, skip fitting so names can wrap and empty rows are unused.
     if (detailVisible) return;
 
     const cardEl = listCardRef.current;
     const tableEl = tableAreaRef.current;
     if (!cardEl || !tableEl) return;
+
+    if (isCompact) {
+      clearListPanelFit(tableEl);
+      return;
+    }
 
     const compute = () => {
       window.requestAnimationFrame(() => {
@@ -410,7 +425,7 @@ export function DocumentsPage() {
       filtersEl?.removeEventListener("toggle", compute);
       clearListPanelFit(tableEl);
     };
-  }, [detailVisible, isLoading, isFetching]);
+  }, [detailVisible, isLoading, isFetching, isCompact]);
 
   useEffect(() => {
     if (total <= 0) return;
@@ -430,7 +445,7 @@ export function DocumentsPage() {
     .filter(Boolean)
     .join(" ");
 
-  const emptyRows = Math.max(0, pageSize - items.length);
+  const emptyRows = isCompact ? 0 : Math.max(0, pageSize - items.length);
 
   const tableOverlayMessage =
     isLoading || (isFetching && items.length === 0)
@@ -630,19 +645,187 @@ export function DocumentsPage() {
     <PageHeader
       title="Documents Classificats"
       description={
-        <>
-          Documents aprovats a l&apos;arxiu. Cliqui un fitxer per previsualitzar
-          el PDF.
-          {filterFolder.trim() ? (
+        isCompact ? (
+          filterFolder.trim() ? (
             <>
-              {" "}
-              Carpeta: <strong>{filterFolder.trim()}</strong>.
+              Carpeta: <strong>{filterFolder.trim()}</strong>
             </>
-          ) : null}
-        </>
+          ) : undefined
+        ) : (
+          <>
+            Documents aprovats a l&apos;arxiu. Cliqui un fitxer per previsualitzar
+            el PDF.
+            {filterFolder.trim() ? (
+              <>
+                {" "}
+                Carpeta: <strong>{filterFolder.trim()}</strong>.
+              </>
+            ) : null}
+          </>
+        )
       }
     />
   );
+
+  const backToListLabel = translateFocusOpen
+    ? "Tornar al document"
+    : "Tornar a la llista";
+
+  const detailEditPanel =
+    detailVisible && selected && !translateFocusOpen ? (
+      <div className="card card-panel split-detail-edit">
+        <h3 className="card-title">Editar document</h3>
+
+        <div className="field">
+          <label htmlFor="doc-name">Nom</label>
+          <input
+            id="doc-name"
+            value={editName}
+            disabled={isSaving}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={saveName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
+          />
+        </div>
+
+        <FilterAutocompleteInput
+          id="doc-folder"
+          label="Carpeta"
+          placeholder="Carpeta d'arxiu"
+          value={editFolder}
+          suggestions={folderSuggestions}
+          onChange={setEditFolder}
+          disabled={isSaving}
+          onCommitValue={(value) => saveFolder(value)}
+          maxSuggestions={0}
+        />
+        <div className="field">
+          <label>Resum</label>
+          <p className="split-detail-summary">{selected.summary || "—"}</p>
+        </div>
+
+        <div
+          className="toolbar-row"
+          style={{ justifyContent: "flex-end", marginTop: "0.75rem" }}
+        >
+          <DeleteDocumentButton
+            document={selected}
+            isPending={deleteMutation.isPending}
+            disabled={
+              updateDocumentMutation.isPending || moveDocumentMutation.isPending
+            }
+            onDelete={(doc) => deleteMutation.mutate(doc.id)}
+          />
+        </div>
+      </div>
+    ) : null;
+
+  const detailPreviewPanel =
+    detailVisible && selected ? (
+      <div className="card card-panel split-detail-preview">
+        {!translateFocusOpen && (
+          <div
+            className="toolbar-row toolbar-row--detail-actions"
+            style={{ marginBottom: 0 }}
+          >
+            <h3
+              className="card-title"
+              style={{ marginBottom: 0, flex: "1 1 auto" }}
+            >
+              Vista prèvia
+            </h3>
+            {!looksLikePassthroughSource(selected.language) && (
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                aria-pressed={false}
+                title="Mostrar el text traduït del document (resultat al costat)"
+                onClick={() => {
+                  setTranslateOpen(true);
+                }}
+              >
+                Traduir
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              title="Descarregar"
+              aria-label="Descarregar"
+              disabled={isDownloading}
+              onClick={() => {
+                void downloadSelectedDocument();
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={rotatePreview}
+              title="Rotar 90°"
+            >
+              Rotar
+            </button>
+          </div>
+        )}
+        {translateOpen &&
+        !looksLikePassthroughSource(selected.language) ? (
+          <BackendDocumentTranslatePanel
+            documentId={selected.id}
+            translatedText={selected.translated_text}
+            translatedPages={selected.translated_pages}
+            layoutPages={selected.layout_pages}
+            layoutPdfUrl={selected.layout_pdf_url}
+            documentLanguage={selected.language}
+            docType={selected.doc_type}
+            docTypeCa={selected.doc_type_ca}
+            open
+            onTranslated={(result) => {
+              setSelected((prev) =>
+                prev && prev.id === result.document_id
+                  ? {
+                      ...prev,
+                      translated_text: result.translated_text,
+                      translated_pages: result.translated_pages,
+                      layout_pages: result.layout_pages,
+                      layout_pdf_url: result.layout_pdf_url,
+                    }
+                  : prev,
+              );
+              void queryClient.invalidateQueries({
+                queryKey: ["documents"],
+              });
+            }}
+          />
+        ) : (
+          <PdfPreview
+            documentId={selected.id}
+            title={editName || selected.original_name || "PDF"}
+            rotation={previewRotation}
+          />
+        )}
+      </div>
+    ) : null;
 
   return (
     <div className="page-fill">
@@ -653,15 +836,21 @@ export function DocumentsPage() {
           <div className="panel-with-back">
             <HubBackButton onClick={() => navigate("/documents")} />
             <div ref={listCardRef} className="card card-panel">
-            <div className="toolbar-row">
+            <div className="toolbar-row toolbar-row--list-search">
               <input
                 type="search"
                 placeholder="Cerca per nom o carpeta…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => refetch()}>
-                Actualitzar
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => refetch()}
+                title="Actualitzar"
+                aria-label="Actualitzar"
+              >
+                {isCompact ? "↻" : "Actualitzar"}
               </button>
             </div>
 
@@ -756,7 +945,7 @@ export function DocumentsPage() {
                         Nom {sortIndicator(orderBy === "proposed_name", orderDir)}
                       </button>
                     </th>
-                    <th>
+                    <th className="table-list-folder-col">
                       <button
                         type="button"
                         className="table-sort-btn"
@@ -768,22 +957,29 @@ export function DocumentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      className={selected?.id === doc.id ? "selected" : ""}
-                      onClick={() => selectDoc(doc)}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
-                      <td>{documentFolder(doc) || "—"}</td>
-                    </tr>
-                  ))}
+                  {items.map((doc) => {
+                    const name = doc.proposed_name ?? doc.original_name ?? "—";
+                    const folder = documentFolder(doc) || "—";
+                    return (
+                      <tr
+                        key={doc.id}
+                        className={selected?.id === doc.id ? "selected" : ""}
+                        onClick={() => selectDoc(doc)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td>
+                          <span className="table-list-primary">{name}</span>
+                          <span className="table-list-secondary">{folder}</span>
+                        </td>
+                        <td className="table-list-folder-col">{folder}</td>
+                      </tr>
+                    );
+                  })}
                   {emptyRows > 0 &&
                     Array.from({ length: emptyRows }).map((_, idx) => (
                       <tr key={`empty-${idx}`} className="data-table-row--empty" aria-hidden="true">
                         <td>&nbsp;</td>
-                        <td>&nbsp;</td>
+                        <td className="table-list-folder-col">&nbsp;</td>
                       </tr>
                     ))}
                 </tbody>
@@ -794,6 +990,7 @@ export function DocumentsPage() {
                 page={page}
                 pageSize={pageSize}
                 total={total}
+                compact={isCompact}
                 onPageChange={setPage}
               />
             )}
@@ -806,166 +1003,39 @@ export function DocumentsPage() {
           </div>
         )}
 
-        {detailVisible && (
+        {detailVisible && !isCompact && (
           <button
             type="button"
             className="split-detail-toggle"
             onClick={toggleDetailPanel}
             disabled={!selected}
             aria-expanded={detailVisible}
-            aria-label={detailVisible ? "Tancar panell" : "Obrir panell"}
+            aria-label={backToListLabel}
+            title={backToListLabel}
           >
-            {detailVisible ? "◀" : "▶"}
+            ◀
           </button>
         )}
 
-        {detailVisible && selected && (
-          <>
-            {/* Same pattern as the list table: unmount while translation is focused. */}
-            {!translateFocusOpen && (
-            <div className="card card-panel split-detail-edit">
-              <h3 className="card-title">Editar document</h3>
-
-              <div className="field">
-                <label htmlFor="doc-name">Nom</label>
-                <input
-                  id="doc-name"
-                  value={editName}
-                  disabled={isSaving}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onBlur={saveName}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              </div>
-
-              <FilterAutocompleteInput
-                id="doc-folder"
-                label="Carpeta"
-                placeholder="Carpeta d'arxiu"
-                value={editFolder}
-                suggestions={folderSuggestions}
-                onChange={setEditFolder}
-                disabled={isSaving}
-                onCommitValue={(value) => saveFolder(value)}
-                maxSuggestions={0}
+        {detailVisible &&
+          selected &&
+          (isCompact ? (
+            <div className="panel-with-back documents-detail-mobile">
+              <HubBackButton
+                onClick={toggleDetailPanel}
+                label={backToListLabel}
               />
-              <div className="field">
-                <label>Resum</label>
-                <p className="split-detail-summary">
-                  {selected.summary || "—"}
-                </p>
-              </div>
-
-              <div className="toolbar-row" style={{ justifyContent: "flex-end", marginTop: "0.75rem" }}>
-                <DeleteDocumentButton
-                  document={selected}
-                  isPending={deleteMutation.isPending}
-                  disabled={updateDocumentMutation.isPending || moveDocumentMutation.isPending}
-                  onDelete={(doc) => deleteMutation.mutate(doc.id)}
-                />
+              <div className="documents-detail-mobile-stack">
+                {detailPreviewPanel}
+                {detailEditPanel}
               </div>
             </div>
-            )}
-
-            <div className="card card-panel split-detail-preview">
-              {!translateFocusOpen && (
-              <div className="toolbar-row" style={{ marginBottom: 0 }}>
-                <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
-                  Vista prèvia
-                </h3>
-                {!looksLikePassthroughSource(selected.language) && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-secondary"
-                  aria-pressed={false}
-                  title="Mostrar el text traduït del document (resultat al costat)"
-                  onClick={() => {
-                    setTranslateOpen(true);
-                  }}
-                >
-                  Traduir
-                </button>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  title="Descarregar"
-                  aria-label="Descarregar"
-                  disabled={isDownloading}
-                  onClick={() => {
-                    void downloadSelectedDocument();
-                  }}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={rotatePreview}
-                  title="Rotar 90°"
-                >
-                  Rotar
-                </button>
-              </div>
-              )}
-              {translateOpen &&
-              !looksLikePassthroughSource(selected.language) ? (
-                <BackendDocumentTranslatePanel
-                  documentId={selected.id}
-                  translatedText={selected.translated_text}
-                  translatedPages={selected.translated_pages}
-                  layoutPages={selected.layout_pages}
-                  layoutPdfUrl={selected.layout_pdf_url}
-                  documentLanguage={selected.language}
-                  docType={selected.doc_type}
-                  docTypeCa={selected.doc_type_ca}
-                  open
-                  onTranslated={(result) => {
-                    setSelected((prev) =>
-                      prev && prev.id === result.document_id
-                        ? {
-                            ...prev,
-                            translated_text: result.translated_text,
-                            translated_pages: result.translated_pages,
-                            layout_pages: result.layout_pages,
-                            layout_pdf_url: result.layout_pdf_url,
-                          }
-                        : prev,
-                    );
-                    void queryClient.invalidateQueries({
-                      queryKey: ["documents"],
-                    });
-                  }}
-                />
-              ) : (
-                <PdfPreview
-                  documentId={selected.id}
-                  title={editName || selected.original_name || "PDF"}
-                  rotation={previewRotation}
-                />
-              )}
-            </div>
-          </>
-        )}
+          ) : (
+            <>
+              {detailEditPanel}
+              {detailPreviewPanel}
+            </>
+          ))}
       </div>
     </div>
   );

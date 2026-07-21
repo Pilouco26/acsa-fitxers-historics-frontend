@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { buildHeaders, documentFileUrl, storedFileUrl, throwIfNotOk } from "@/api/client";
-import { openPdfDocument, renderPdfPageOntoCanvas } from "@/utils/pdfDocument";
+import { openPdfDocument, renderPdfPageOntoCanvas, isPdfRenderCancelled } from "@/utils/pdfDocument";
 
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 3;
@@ -168,10 +168,13 @@ export function PdfCanvasViewer({
     const runFit = () => {
       void measureFitZoom(pdf, page, rotationDeg, frame).then((nextFit) => {
         if (cancelled || gen !== fitGenRef.current) return;
+        const prevFit = fitZoomRef.current;
         fitZoomRef.current = nextFit;
-        setFitZoom(nextFit);
+        if (Math.abs(nextFit - prevFit) >= 0.01) {
+          setFitZoom(nextFit);
+        }
         if (stickToFitRef.current) {
-          setZoom(nextFit);
+          setZoom((z) => (Math.abs(z - nextFit) < 0.01 ? z : nextFit));
         }
       });
     };
@@ -214,7 +217,7 @@ export function PdfCanvasViewer({
         setRendering(false);
       })
       .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (isPdfRenderCancelled(err)) return;
         if (gen !== renderGenRef.current) return;
         setError("No s'ha pogut renderitzar la pàgina del PDF.");
         setRendering(false);
