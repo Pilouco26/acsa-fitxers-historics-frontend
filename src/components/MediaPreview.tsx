@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   buildHeaders,
   pictureFileUrl,
@@ -7,6 +7,61 @@ import {
   videoFileUrl,
 } from "@/api/client";
 import type { MediaKind } from "@/api/types";
+
+const activeReleases = new Map<string, () => void>();
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function mediaPreviewKey(
+  kind: MediaKind,
+  id?: number | null,
+  filePath?: string | null,
+): string {
+  if (id != null) return `${kind}:${id}`;
+  if (filePath) return `path:${filePath}`;
+  return "empty";
+}
+
+/** Force-close any in-flight preview fetch / media element for a picture or video. */
+export async function releaseMediaPreview(
+  kind: MediaKind,
+  id: number,
+): Promise<void> {
+  await releasePreviewKey(mediaPreviewKey(kind, id));
+}
+
+/** Force-close any in-flight preview fetch / media element for a storage path. */
+export async function releaseMediaFilePathPreview(
+  filePath: string,
+): Promise<void> {
+  await releasePreviewKey(`path:${filePath}`);
+}
+
+async function releasePreviewKey(key: string): Promise<void> {
+  const release = activeReleases.get(key);
+  if (release) {
+    release();
+    activeReleases.delete(key);
+  }
+  await nextFrame();
+  await nextFrame();
+}
+
+function clearMediaElement(
+  img: HTMLImageElement | null,
+  video: HTMLVideoElement | null,
+): void {
+  if (img) {
+    img.removeAttribute("src");
+  }
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+}
 
 type MediaPreviewProps = {
   kind: MediaKind;
@@ -30,6 +85,8 @@ export function MediaPreview({
   className,
   thumb = false,
 }: MediaPreviewProps) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -43,17 +100,33 @@ export function MediaPreview({
         ? storedFileUrl(filePath)
         : null;
 
+  const cacheKey = mediaPreviewKey(kind, id, filePath);
+
   useLayoutEffect(() => {
     let active = true;
     const ac = new AbortController();
     let urlToRevoke: string | null = null;
 
+    const release = () => {
+      active = false;
+      ac.abort();
+      clearMediaElement(imgRef.current, videoRef.current);
+      if (urlToRevoke) {
+        URL.revokeObjectURL(urlToRevoke);
+        urlToRevoke = null;
+      }
+    };
+
     if (!sourceUrl) {
       setLoading(false);
       setError("No s'ha pogut determinar el fitxer a previsualitzar.");
       setObjectUrl(null);
-      return;
+      return () => {
+        release();
+      };
     }
+
+    activeReleases.set(cacheKey, release);
 
     setLoading(true);
     setError(null);
@@ -82,11 +155,10 @@ export function MediaPreview({
       });
 
     return () => {
-      active = false;
-      ac.abort();
-      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
+      activeReleases.delete(cacheKey);
+      release();
     };
-  }, [sourceUrl]);
+  }, [cacheKey, sourceUrl]);
 
   if (error) {
     return <div className="alert alert-error">{error}</div>;
@@ -104,10 +176,16 @@ export function MediaPreview({
     <div className={shellClass} aria-busy={loading} aria-label={title}>
       {loading && <p className="empty-state">Carregant…</p>}
       {!loading && objectUrl && kind === "picture" && (
-        <img src={objectUrl} alt={title} className="media-preview-media" />
+        <img
+          ref={imgRef}
+          src={objectUrl}
+          alt={title}
+          className="media-preview-media"
+        />
       )}
       {!loading && objectUrl && kind === "video" && (
         <video
+          ref={videoRef}
           src={objectUrl}
           controls={!thumb}
           muted={thumb}

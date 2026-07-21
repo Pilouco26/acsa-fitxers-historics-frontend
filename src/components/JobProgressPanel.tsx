@@ -15,10 +15,16 @@ const documentStatusCountLabels: Record<string, string> = {
 };
 
 const jobMessageLabels: Record<string, string> = {
-  "Analyzing documents": "Analitzant documents",
-  "Processing documents": "Processant documents",
-  "Assigning documents": "Assignant documents",
-  "Classifying documents": "Classificant documents",
+  "analyzing documents": "Analitzant documents",
+  "processing documents": "Processant documents",
+  "assigning documents": "Assignant documents",
+  "classifying documents": "Classificant documents",
+  "job started": "Feina iniciada",
+  "job iniciat": "Feina iniciada",
+  "media analyze": "Anàlisi de mitjans",
+  "media-analyze": "Anàlisi de mitjans",
+  "analyzing media": "Analitzant mitjans",
+  "processing media": "Processant mitjans",
 };
 
 function translateDocumentStatus(status: string): string {
@@ -26,7 +32,8 @@ function translateDocumentStatus(status: string): string {
 }
 
 function translateJobMessage(message: string): string {
-  return jobMessageLabels[message] ?? message;
+  const key = message.trim().toLowerCase();
+  return jobMessageLabels[key] ?? message;
 }
 
 function formatDuration(seconds: number): string {

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "docs:guia-ca": "node scripts/generate-guia-flux-principal.mjs",
-    "docs:codebase-ca": "node scripts/generate-codebase-docs.mjs"
+    "docs:codebase-ca": "node scripts/generate-codebase-docs.mjs",
+    "docs:dev-guide-ca": "node scripts/generate-guia-desenvolupador-acsa.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.60.0",

@@ -15,6 +15,7 @@ export function ClassificadorPage() {
     busy,
     isStarting,
     isAssigning,
+    isRouting,
     contentKind: activeJobKind,
     startAnalyze,
     cancel,
@@ -123,13 +124,20 @@ export function ClassificadorPage() {
           </div>
         )}
 
+        {!isDocuments && isRouting && (
+          <div className="job-status" style={{ marginTop: "1rem" }}>
+            <strong>Estat:</strong> Calculant carpetes de destinació…
+          </div>
+        )}
+
         {job?.status === "completed" &&
           !isAssigning &&
+          !isRouting &&
           activeJobKind === contentKind && (
             <div className="alert alert-success" style={{ marginTop: "1rem" }}>
               {isDocuments
                 ? "Anàlisi i assignació completades. Reviseu els documents a la pestanya Revisió."
-                : "Anàlisi de mitjans completada. Reviseu-los a la pestanya Revisió."}
+                : "Anàlisi i assignació de carpetes completades. Reviseu-los a la pestanya Revisió."}
             </div>
           )}
       </div>

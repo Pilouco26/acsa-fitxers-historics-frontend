@@ -25,15 +25,25 @@ import type {
   EmailOut,
   EmailUpdate,
   FolderListResponse,
+  FolderRoot,
   HealthOut,
   JobCreated,
   JobOut,
   MediaAnalyzeJobRequest,
   MediaBatchUploadOut,
   MediaFilters,
-  MediaOwnerType,
+  MediaGuessRouteResponse,
+  MediaKind,
+  MediaMoveRequest,
+  MediaMoveResponse,
+  MediaRouteRequest,
+  MediaRouteResponse,
   MediaUpdate,
   MediaUploadOut,
+  NoteCreate,
+  NoteListResponse,
+  NoteOut,
+  NoteUpdate,
   PictureListResponse,
   PictureOut,
   RevertResponse,
@@ -50,7 +60,6 @@ import {
   getApiBaseUrl,
   setAccessToken,
 } from "@/config";
-
 const BASE = getApiBaseUrl();
 
 export class ApiError extends Error {
@@ -492,7 +501,7 @@ export function revertRenames(): Promise<RevertResponse> {
 
 export function listFolders(params?: {
   folder?: string;
-  root?: string;
+  root?: FolderRoot | string;
 }): Promise<FolderListResponse> {
   const qs = new URLSearchParams();
   if (params?.folder) qs.set("folder", params.folder);
@@ -553,8 +562,9 @@ export function startEmailAnalyzeJob(body: EmailAnalyzeRequest): Promise<JobCrea
 function mediaListQuery(params: MediaFilters = {}): string {
   const qs = new URLSearchParams();
   if (params.status) qs.set("status", params.status);
-  if (params.type) qs.set("type", params.type);
   if (params.q) qs.set("q", params.q);
+  const folder = params.folder ?? params.company_folder;
+  if (folder) qs.set("folder", folder);
   if (params.limit != null) qs.set("limit", String(params.limit));
   if (params.offset != null) qs.set("offset", String(params.offset));
   const query = qs.toString();
@@ -563,12 +573,11 @@ function mediaListQuery(params: MediaFilters = {}): string {
 
 export async function uploadMedia(
   file: File,
-  ownerType: MediaOwnerType,
 ): Promise<MediaUploadOut> {
   try {
     const form = new FormData();
     form.append("file", file);
-    const qs = new URLSearchParams({ target: "media", type: ownerType });
+    const qs = new URLSearchParams({ target: "media" });
     const res = await fetch(`${BASE}/files/upload?${qs}`, {
       method: "POST",
       headers: buildHeaders(),
@@ -607,14 +616,13 @@ export async function uploadMedia(
 
 export async function uploadMediaBatch(
   files: File[],
-  ownerType: MediaOwnerType,
 ): Promise<MediaBatchUploadOut> {
   try {
     const form = new FormData();
     for (const f of files) {
       form.append("files", f);
     }
-    const qs = new URLSearchParams({ target: "media", type: ownerType });
+    const qs = new URLSearchParams({ target: "media" });
     const res = await fetch(`${BASE}/files/upload/batch?${qs}`, {
       method: "POST",
       headers: buildHeaders(),
@@ -692,6 +700,38 @@ export function updateVideo(id: number, body: MediaUpdate): Promise<VideoOut> {
   );
 }
 
+export function movePicture(
+  id: number,
+  body: MediaMoveRequest,
+): Promise<MediaMoveResponse> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<MediaMoveResponse>(
+    `/pictures/move?${qs}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Foto moguda", errorPrefix: "Error en moure" },
+  );
+}
+
+export function moveVideo(
+  id: number,
+  body: MediaMoveRequest,
+): Promise<MediaMoveResponse> {
+  const qs = new URLSearchParams({ id: String(id) });
+  return request<MediaMoveResponse>(
+    `/videos/move?${qs}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Vídeo mogut", errorPrefix: "Error en moure" },
+  );
+}
+
 export function deletePicture(id: number): Promise<void> {
   const qs = new URLSearchParams({ id: String(id) });
   return request<void>(
@@ -737,6 +777,33 @@ export function startMediaAnalyzeJob(
   );
 }
 
+export function guessMediaRoute(
+  id: number,
+  kind: MediaKind,
+): Promise<MediaGuessRouteResponse> {
+  const qs = new URLSearchParams({ id: String(id), kind });
+  return request<MediaGuessRouteResponse>(`/media/guess-route?${qs}`, {
+    method: "POST",
+  });
+}
+
+export function routeMedia(
+  id: number,
+  kind: MediaKind,
+  body: MediaRouteRequest = {},
+): Promise<MediaRouteResponse> {
+  const qs = new URLSearchParams({ id: String(id), kind });
+  return request<MediaRouteResponse>(
+    `/media/route?${qs}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Mitjà mogut", errorPrefix: "Error en moure" },
+  );
+}
+
 /** Fetch a media/binary endpoint as a blob object URL (caller must revoke). */
 export async function fetchMediaObjectUrl(
   url: string,
@@ -749,4 +816,58 @@ export async function fetchMediaObjectUrl(
   await throwIfNotOk(res);
   const blob = await res.blob();
   return URL.createObjectURL(blob);
+}
+
+// --- Notes ---
+
+export function listNotes(): Promise<NoteListResponse> {
+  return request<NoteListResponse>("/notes");
+}
+
+export function getNote(id: string): Promise<NoteOut> {
+  const qs = new URLSearchParams({ id });
+  return request<NoteOut>(`/notes?${qs}`);
+}
+
+export function createNote(body: NoteCreate = {}): Promise<NoteOut> {
+  return request<NoteOut>(
+    "/notes",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    false,
+  );
+}
+
+export function updateNote(id: string, body: NoteUpdate): Promise<NoteOut> {
+  const qs = new URLSearchParams({ id });
+  return request<NoteOut>(
+    `/notes?${qs}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    false,
+  );
+}
+
+export function deleteNote(id: string): Promise<void> {
+  const qs = new URLSearchParams({ id });
+  return request<void>(
+    `/notes?${qs}`,
+    { method: "DELETE" },
+    { success: "Eliminat", errorPrefix: "Error en eliminar" },
+  );
+}
+
+export function bringNoteToFront(id: string): Promise<NoteOut> {
+  const qs = new URLSearchParams({ id });
+  return request<NoteOut>(
+    `/notes/bring-to-front?${qs}`,
+    { method: "POST" },
+    false,
+  );
 }

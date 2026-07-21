@@ -9,7 +9,7 @@ import {
 } from "@/api/client";
 import { MediaPreview } from "@/components/MediaPreview";
 import { PageHeader } from "@/components/PageHeader";
-import type { MediaOwnerType, MediaUploadOut, UploadOut } from "@/api/types";
+import type { MediaUploadOut, UploadOut } from "@/api/types";
 
 type ContentKind = "documents" | "media";
 
@@ -21,7 +21,7 @@ const DOCUMENT_STEPS = [
 
 const MEDIA_STEPS = [
   "Prepareu fotos (.jpg, .png, .webp) o vídeos (.mp4, .mov, .webm).",
-  "Trieu FAMILIA o EMPRESA i arrossegueu fitxers o una carpeta aquí.",
+  "Arrossegueu fitxers o una carpeta aquí, o trieu-los amb els botons.",
   "Un cop pujats, analitzeu-los al Classificador i reviseu-los a Revisió.",
 ] as const;
 
@@ -132,7 +132,6 @@ export function UploadPage() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [contentKind, setContentKind] = useState<ContentKind>("documents");
   const [dragOver, setDragOver] = useState(false);
-  const [ownerType, setOwnerType] = useState<MediaOwnerType>("EMPRESA");
   const [uploadedDocs, setUploadedDocs] = useState<UploadOut[]>([]);
   const [uploadedMedia, setUploadedMedia] = useState<MediaUploadOut[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -155,7 +154,7 @@ export function UploadPage() {
   });
 
   const mediaMutation = useMutation({
-    mutationFn: (files: File[]) => uploadMediaBatch(files, ownerType),
+    mutationFn: (files: File[]) => uploadMediaBatch(files),
     onSuccess: (data) => {
       setUploadedMedia((prev) => [...data.files, ...prev]);
       setError(null);
@@ -335,30 +334,6 @@ export function UploadPage() {
               : "Pujar fotos i vídeos"}
           </h3>
 
-          {contentKind === "media" && (
-            <div className="field" style={{ marginBottom: "1rem" }}>
-              <label>Tipus de propietari</label>
-              <div className="segmented-control" role="group" aria-label="Tipus">
-                <button
-                  type="button"
-                  className={ownerType === "EMPRESA" ? "active" : undefined}
-                  onClick={() => setOwnerType("EMPRESA")}
-                  disabled={isPending}
-                >
-                  EMPRESA
-                </button>
-                <button
-                  type="button"
-                  className={ownerType === "FAMILIA" ? "active" : undefined}
-                  onClick={() => setOwnerType("FAMILIA")}
-                  disabled={isPending}
-                >
-                  FAMILIA
-                </button>
-              </div>
-            </div>
-          )}
-
           <div
             className={`drop-zone${dragOver ? " drag-over" : ""}`}
             style={{ cursor: "default" }}
@@ -383,7 +358,7 @@ export function UploadPage() {
             <p style={{ marginTop: "0.5rem", fontSize: "0.8125rem" }}>
               {contentKind === "documents"
                 ? "Màxim 50 MB per fitxer · Fitxers individuals o carpeta sencera"
-                : `Fitxers o carpeta · Tipus actual: ${ownerType}`}
+                : "Es permeten diversos fitxers o una carpeta sencera"}
             </p>
             <div
               className="drop-zone-actions"
@@ -519,7 +494,7 @@ export function UploadPage() {
                     <strong>{f.filename}</strong>
                     <span>
                       {f.media_kind === "picture" ? "Imatge" : "Vídeo"} · id{" "}
-                      {f.id} · {f.type}
+                      {f.id}
                     </span>
                   </div>
                 </div>

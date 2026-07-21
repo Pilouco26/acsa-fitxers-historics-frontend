@@ -7,6 +7,7 @@ import { CorreusPage } from "@/pages/CorreusPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { EdicionsPage } from "@/pages/EdicionsPage";
 import { MediaCatalogPage } from "@/pages/MediaCatalogPage";
+import { NotesPage } from "@/pages/NotesPage";
 import { RecuperacioPage } from "@/pages/RecuperacioPage";
 import { RevisioPage } from "@/pages/RevisioPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -18,6 +19,7 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: "/revisio", element: <RevisioPage /> },
   { path: "/documents", element: <DocumentsPage /> },
   { path: "/media/catalog", element: <MediaCatalogPage /> },
+  { path: "/notes", element: <NotesPage /> },
   { path: "/settings", element: <SettingsPage /> },
   { path: "/comparador", element: <ComparadorPage /> },
   { path: "/admin/analisi", element: <AnalisiPage /> },

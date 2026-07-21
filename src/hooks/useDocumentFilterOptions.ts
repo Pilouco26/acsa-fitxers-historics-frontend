@@ -2,11 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchAllDocuments } from "@/utils/fetchAllDocuments";
 
 /** Distinct doc_type_ca values from approved documents, for filter dropdowns. */
-export function useDocumentFilterOptions(status: string) {
+export function useDocumentFilterOptions(
+  status: string,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ["documents", status, "all"],
     queryFn: () => fetchAllDocuments(status),
     staleTime: 5 * 60 * 1000,
+    enabled: options?.enabled ?? true,
     select: (docs) => {
       const docTypeCa = new Set<string>();
       const folders = new Set<string>();

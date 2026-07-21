@@ -169,6 +169,7 @@ export function RevisioPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["revisio-count"] });
       setSelected(null);
       setDetailOpen(false);
       setError(null);
@@ -182,6 +183,7 @@ export function RevisioPage() {
     mutationFn: (id: number) => deleteDocument(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["revisio-count"] });
       setError(null);
     },
     onError: (err) => {
@@ -290,7 +292,7 @@ export function RevisioPage() {
               </span>
             </>
           ) : (
-            "Reviseu què passa a l'escena i on (resum i ubicació), ajusteu el nom i aproveu al catàleg."
+            "Reviseu què passa a l'escena i on (resum i ubicació), ajusteu el nom, aproveu al catàleg o descarteu el fitxer."
           )
         }
       />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMatch, useNavigate } from "react-router-dom";
+import { useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import {
   buildHeaders,
   deleteDocument,
@@ -12,13 +12,16 @@ import {
   throwIfNotOk,
   updateDocument,
 } from "@/api/client";
+import { ArchiveFolderPickPanel, ArchiveHubPanel } from "@/components/ArchiveHubPanel";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { FilterAutocompleteInput } from "@/components/FilterAutocompleteInput";
+import { HubBackButton } from "@/components/HubBackButton";
 import { PageHeader } from "@/components/PageHeader";
 import { BackendDocumentTranslatePanel } from "@/components/BackendDocumentTranslatePanel";
 import { PdfPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import toast from "react-hot-toast";
+import { documentsListPath, FOLDER_ROOT_ARCHIVE } from "@/constants/folders";
 import {
   DOCUMENT_LIST_PAGE_SIZE,
   DOCUMENT_STATUS_OK,
@@ -58,15 +61,32 @@ function sanitizeFilename(name: string): string {
 export function DocumentsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const listMatch = useMatch({ path: "/documents/list", end: true });
+  const folderPickMatch = useMatch({ path: "/documents/folder", end: true });
   const documentMatch = useMatch("/documents/:documentId");
-  const routeDocumentParam = documentMatch?.params.documentId;
+  const routeDocumentParam =
+    listMatch || folderPickMatch
+      ? undefined
+      : documentMatch?.params.documentId;
   const routeDocumentId =
     routeDocumentParam != null && /^\d+$/.test(routeDocumentParam)
       ? Number(routeDocumentParam)
       : null;
+  const folderPickName = folderPickMatch
+    ? (searchParams.get("name")?.trim() ?? "")
+    : "";
+  const showFolderPick = Boolean(folderPickMatch);
+  const showHub =
+    !listMatch &&
+    !folderPickMatch &&
+    routeDocumentId == null &&
+    !documentMatch;
+  const folderFromUrl = searchParams.get("folder") ?? "";
+  const showListChrome = !showHub && !showFolderPick;
 
   const [search, setSearch] = useState("");
-  const [filterFolder, setFilterFolder] = useState("");
+  const [filterFolder, setFilterFolder] = useState(folderFromUrl);
   const [filterProposedName, setFilterProposedName] = useState("");
   const [filterOriginalName, setFilterOriginalName] = useState("");
   const [filterDocTypeCa, setFilterDocTypeCa] = useState("");
@@ -77,12 +97,22 @@ export function DocumentsPage() {
   const debouncedFilterProposedName = useDebouncedValue(filterProposedName);
   const debouncedFilterOriginalName = useDebouncedValue(filterOriginalName);
   const debouncedFilterFinalDate = useDebouncedValue(filterFinalDate);
-  const { data: filterOptions } = useDocumentFilterOptions(DOCUMENT_STATUS_OK);
+  const { data: filterOptions } = useDocumentFilterOptions(
+    DOCUMENT_STATUS_OK,
+    { enabled: showListChrome },
+  );
   const { data: archiveFolders } = useQuery({
-    queryKey: ["folders", "archive"],
-    queryFn: () => listFolders({ root: "archive" }),
+    queryKey: ["folders", FOLDER_ROOT_ARCHIVE],
+    queryFn: () => listFolders({ root: FOLDER_ROOT_ARCHIVE }),
     staleTime: 5 * 60 * 1000,
+    enabled: showListChrome,
   });
+
+  useEffect(() => {
+    if (!showListChrome) return;
+    setFilterFolder(folderFromUrl);
+  }, [showListChrome, folderFromUrl]);
+
   const [orderBy, setOrderBy] = useState<DocumentOrderBy | null>(null);
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
@@ -96,6 +126,15 @@ export function DocumentsPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const listCardRef = useRef<HTMLDivElement>(null);
   const tableAreaRef = useRef<HTMLDivElement>(null);
+  const hubScrollTopRef = useRef(0);
+  const [hubSearch, setHubSearch] = useState("");
+
+  useEffect(() => {
+    if (showListChrome) return;
+    setDetailOpen(false);
+    setSelected(null);
+    setTranslateOpen(false);
+  }, [showListChrome]);
 
   const folderSuggestions = useMemo(
     () =>
@@ -158,7 +197,7 @@ export function DocumentsPage() {
   const allDocumentsQuery = useQuery({
     queryKey: ["documents", DOCUMENT_STATUS_OK, "all"],
     queryFn: () => fetchAllDocuments(DOCUMENT_STATUS_OK),
-    enabled: hasActiveFilters,
+    enabled: showListChrome && hasActiveFilters,
     staleTime: 30_000,
   });
 
@@ -180,7 +219,7 @@ export function DocumentsPage() {
         limit: pageSize,
         offset: page * pageSize,
       }),
-    enabled: !hasActiveFilters,
+    enabled: showListChrome && !hasActiveFilters,
     placeholderData: (previousData, previousQuery) => {
       if (!previousData || !previousQuery) return previousData;
       const prev = previousQuery.queryKey;
@@ -249,7 +288,7 @@ export function DocumentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       setSelected(null);
-      navigate("/documents");
+      navigate(documentsListPath(filterFolder));
     },
   });
 
@@ -261,14 +300,28 @@ export function DocumentsPage() {
   const routeDocumentQuery = useQuery({
     queryKey: ["documents", "detail", routeDocumentId],
     queryFn: () => getDocument(routeDocumentId!),
-    enabled: routeDocumentId != null,
+    enabled: showListChrome && routeDocumentId != null,
   });
 
   useEffect(() => {
+    if (listMatch || folderPickMatch || showHub) return;
     if (documentMatch && routeDocumentId == null) {
       navigate("/documents", { replace: true });
     }
-  }, [documentMatch, routeDocumentId, navigate]);
+  }, [
+    listMatch,
+    folderPickMatch,
+    showHub,
+    documentMatch,
+    routeDocumentId,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (folderPickMatch && !folderPickName) {
+      navigate("/documents", { replace: true });
+    }
+  }, [folderPickMatch, folderPickName, navigate]);
 
   useEffect(() => {
     if (routeDocumentId == null) {
@@ -278,7 +331,7 @@ export function DocumentsPage() {
     }
 
     if (routeDocumentQuery.isError) {
-      navigate("/documents", { replace: true });
+      navigate(documentsListPath(folderFromUrl), { replace: true });
       return;
     }
 
@@ -297,7 +350,7 @@ export function DocumentsPage() {
   ]);
 
   usePrefetchDocumentListPages({
-    enabled: !hasActiveFilters,
+    enabled: showListChrome && !hasActiveFilters,
     page,
     pageSize,
     total,
@@ -389,7 +442,10 @@ export function DocumentsPage() {
         : null;
 
   function selectDoc(doc: DocumentOut) {
-    navigate(`/documents/${doc.id}`);
+    const folderQs = filterFolder.trim()
+      ? `?folder=${encodeURIComponent(filterFolder.trim())}`
+      : "";
+    navigate(`/documents/${doc.id}${folderQs}`);
   }
 
   function toggleDetailPanel() {
@@ -400,10 +456,13 @@ export function DocumentsPage() {
       return;
     }
     if (detailOpen) {
-      navigate("/documents");
+      navigate(documentsListPath(folderFromUrl || filterFolder));
       return;
     }
-    navigate(`/documents/${selected.id}`);
+    const folderQs = (folderFromUrl || filterFolder).trim()
+      ? `?folder=${encodeURIComponent((folderFromUrl || filterFolder).trim())}`
+      : "";
+    navigate(`/documents/${selected.id}${folderQs}`);
   }
 
   useEffect(() => {
@@ -533,16 +592,74 @@ export function DocumentsPage() {
       filterLanguage,
   );
 
+  if (showHub) {
+    return (
+      <div className="page-fill page-fill--archive-hub">
+        <PageHeader
+          title="Classificats"
+          description="Trieu una carpeta o obriu documents, fotos o vídeos."
+        />
+        <ArchiveHubPanel
+          searchFilter={hubSearch}
+          onSearchFilterChange={setHubSearch}
+          initialScrollTop={hubScrollTopRef.current}
+          onScrollTopChange={(scrollTop) => {
+            hubScrollTopRef.current = scrollTop;
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (showFolderPick) {
+    if (!folderPickName) {
+      return null;
+    }
+    return (
+      <div className="page-fill">
+        <PageHeader
+          title={folderPickName}
+          description="Trieu què voleu veure d'aquesta carpeta."
+        />
+        <ArchiveFolderPickPanel folderName={folderPickName} />
+      </div>
+    );
+  }
+
+  const pageHeader = (
+    <PageHeader
+      title="Documents Classificats"
+      description={
+        <>
+          Documents aprovats a l&apos;arxiu. Cliqui un fitxer per previsualitzar
+          el PDF.
+          {filterFolder.trim() ? (
+            <>
+              {" "}
+              Carpeta: <strong>{filterFolder.trim()}</strong>.
+            </>
+          ) : null}
+        </>
+      }
+    />
+  );
+
   return (
     <div className="page-fill">
-      <PageHeader
-        title="Documents Classificats"
-        description="Documents aprovats a l'arxiu. Cliqui un fitxer per previsualitzar el PDF."
-      />
+      {detailVisible ? (
+        <div className="page-header-with-back">
+          <HubBackButton onClick={() => navigate("/documents")} />
+          {pageHeader}
+        </div>
+      ) : (
+        pageHeader
+      )}
 
       <div className={splitClassName}>
         {!detailVisible && (
-          <div ref={listCardRef} className="card card-panel">
+          <div className="panel-with-back">
+            <HubBackButton onClick={() => navigate("/documents")} />
+            <div ref={listCardRef} className="card card-panel">
             <div className="toolbar-row">
               <input
                 type="search"
@@ -692,6 +809,7 @@ export function DocumentsPage() {
                 Actualitzant paginació…
               </p>
             )}
+            </div>
           </div>
         )}
 

@@ -15,6 +15,7 @@ export function LoginPage() {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -74,16 +75,30 @@ export function LoginPage() {
 
           <div className="field">
             <label htmlFor="login-password">Contrasenya</label>
-            <input
-              id="login-password"
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={submitting}
-            />
+            <div className="password-field">
+              <input
+                id="login-password"
+                type={showPassword ? "text" : "password"}
+                name="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                disabled={submitting}
+                aria-label={
+                  showPassword ? "Amagar contrasenya" : "Mostrar contrasenya"
+                }
+                aria-pressed={showPassword}
+              >
+                {showPassword ? "Amagar" : "Mostrar"}
+              </button>
+            </div>
           </div>
 
           <button

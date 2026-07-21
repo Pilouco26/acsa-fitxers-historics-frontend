@@ -1,5 +1,5 @@
 /**
- * Genera la guia d'ús del flux principal (1 pàgina A4, català, visual).
+ * Genera la guia d'ús del flux principal actual (1 pàgina A4, català, visual).
  * Ús: node scripts/generate-guia-flux-principal.mjs
  */
 import fs from "node:fs";
@@ -41,28 +41,40 @@ const C = {
 
 const STEPS = [
   {
-    tab: "Escàner",
-    verb: "Pujar",
-    actions: ["Escanegeu a l'aplicació de l'escàner", "Pugeu el document a la web"],
-    icon: "scan",
+    tab: "Entrar",
+    verb: "Accedir",
+    actions: ["Inicieu sessió amb usuari i contrasenya", "Entrareu al flux principal"],
+    icon: "login",
+  },
+  {
+    tab: "Pujar",
+    verb: "Carregar",
+    actions: ["Trieu documents o fotos / vídeos", "Pugeu fitxers solts o una carpeta"],
+    icon: "upload",
   },
   {
     tab: "Classificador",
-    verb: "Processar",
-    actions: ["Premeu «Processar documents»", "Espereu que acabi"],
+    verb: "Analitzar",
+    actions: ["Processa documents o mitjans", "Espereu el progrés i l'assignació"],
     icon: "ai",
   },
   {
     tab: "Revisió",
     verb: "Validar",
-    actions: ["Reviseu PDF, nom i resum", "Aproveu o elimineu"],
+    actions: ["Reviseu nom, resum i vista prèvia", "Aproveu, descarteu o reintenteu"],
     icon: "check",
   },
   {
-    tab: "Documents",
+    tab: "Classificats",
     verb: "Consultar",
-    actions: ["Cerqueu i filtreu", "Obriu qualsevol fitxer"],
+    actions: ["Obriu carpetes, documents i catàleg de mitjans", "Cerqueu, filtreu i descarregueu"],
     icon: "folder",
+  },
+  {
+    tab: "Notes",
+    verb: "Organitzar",
+    actions: ["Creeu post-its lliures sobre el tauler", "Arrossegueu, feu zoom i reordeneu"],
+    icon: "note",
   },
 ];
 
@@ -96,6 +108,16 @@ function drawIcon(doc, kind, cx, cy, color) {
     doc.moveTo(cx - 14, cy + 7).lineTo(cx - 14, cy + 14).lineTo(cx - 7, cy + 14).stroke();
     doc.moveTo(cx + 14, cy + 7).lineTo(cx + 14, cy + 14).lineTo(cx + 7, cy + 14).stroke();
     doc.moveTo(cx - 6, cy).lineTo(cx + 6, cy).stroke();
+  } else if (kind === "login") {
+    roundedRect(doc, cx - 12, cy - 10, 18, 20, 2);
+    doc.stroke();
+    doc.moveTo(cx - 1, cy).lineTo(cx + 12, cy).stroke();
+    doc.moveTo(cx + 7, cy - 5).lineTo(cx + 12, cy).lineTo(cx + 7, cy + 5).stroke();
+  } else if (kind === "upload") {
+    roundedRect(doc, cx - 12, cy - 6, 24, 16, 3);
+    doc.stroke();
+    doc.moveTo(cx, cy - 13).lineTo(cx, cy + 1).stroke();
+    doc.moveTo(cx - 5, cy - 8).lineTo(cx, cy - 13).lineTo(cx + 5, cy - 8).stroke();
   } else if (kind === "ai") {
     // Spark / burst
     doc.circle(cx, cy, 3.5).fill(color);
@@ -127,6 +149,12 @@ function drawIcon(doc, kind, cx, cy, color) {
       .lineTo(cx - 13, cy + 9)
       .closePath()
       .stroke();
+  } else if (kind === "note") {
+    roundedRect(doc, cx - 11, cy - 11, 22, 22, 3);
+    doc.stroke();
+    doc.moveTo(cx - 6, cy - 3).lineTo(cx + 6, cy - 3).stroke();
+    doc.moveTo(cx - 6, cy + 2).lineTo(cx + 4, cy + 2).stroke();
+    doc.moveTo(cx - 6, cy + 7).lineTo(cx + 2, cy + 7).stroke();
   }
 
   doc.restore();
@@ -293,9 +321,9 @@ function drawTips(doc, x, y, w) {
     .text("Consells ràpids", x + 18, y + 12, { width: w - 36 });
 
   const tips = [
-    "Només PDF",
-    "Sense fitxers nous → Pas 1",
-    "Revisió buida → espereu Pas 2",
+    "Documents: PDF",
+    "Mitjans: JPG/PNG/WebP/MP4/MOV/WebM",
+    "Sense pendents: torneu a «Pujar» o «Classificador»",
   ];
   const tipW = (w - 36) / tips.length;
   tips.forEach((tip, i) => {
@@ -342,34 +370,35 @@ doc
   .font("Bold")
   .fontSize(22)
   .fillColor(C.ink)
-  .text("ACSA — Fitxers històrics", contentX, 22, {
+  .text("ACSA — Fitxers històrics", contentX, 20, {
     width: contentW,
     align: "center",
   });
 doc
   .font("Regular")
-  .fontSize(12)
+  .fontSize(11.5)
   .fillColor(C.muted)
-  .text("Guia pas a pas del flux principal", contentX, 48, {
+  .text("Guia visual del flux principal actual", contentX, 48, {
     width: contentW,
     align: "center",
   });
 
 drawFlowBar(doc, contentX, 68, contentW);
 
-// 2×2 grid — fills the page between header and tips
+// 3×2 grid — fills the page between header and tips
 const gridTop = 128;
 const gridBottom = PAGE_H - 108;
 const gap = 16;
-const cardW = (contentW - gap) / 2;
-const cardH = (gridBottom - gridTop - gap) / 2;
+const columns = 3;
+const rows = 2;
+const cardW = (contentW - gap * (columns - 1)) / columns;
+const cardH = (gridBottom - gridTop - gap * (rows - 1)) / rows;
 
-const positions = [
-  [contentX, gridTop],
-  [contentX + cardW + gap, gridTop],
-  [contentX, gridTop + cardH + gap],
-  [contentX + cardW + gap, gridTop + cardH + gap],
-];
+const positions = STEPS.map((_, index) => {
+  const col = index % columns;
+  const row = Math.floor(index / columns);
+  return [contentX + col * (cardW + gap), gridTop + row * (cardH + gap)];
+});
 
 STEPS.forEach((step, i) => {
   const [cx, cy] = positions[i];

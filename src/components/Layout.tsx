@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { listPictures, listVideos } from "@/api/client";
+import { listDocuments, listPictures, listVideos } from "@/api/client";
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { MoreNavMenu } from "@/components/MoreNavMenu";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,7 +12,8 @@ const mainNav = [
   { to: "/upload", label: "Pujar" },
   { to: "/classificador", label: "Classificador" },
   { to: "/revisio", label: "Revisió", badgeKey: "revisio" as const },
-  { to: "/documents", label: "Documents" },
+  { to: "/documents", label: "Classificats" },
+  { to: "/notes", label: "Notes" },
 ];
 
 const mediaNav = [{ to: "/media/catalog", label: "Catàleg mitjans" }];
@@ -76,13 +77,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   const revisioCountQuery = useQuery({
-    queryKey: ["media-revisio-count"],
+    queryKey: ["revisio-count"],
     queryFn: async () => {
-      const [pictures, videos] = await Promise.all([
+      const [documents, pictures, videos] = await Promise.all([
+        listDocuments({ status: DOCUMENT_STATUS_REVISIO, limit: 1 }),
         listPictures({ status: DOCUMENT_STATUS_REVISIO, limit: 1 }),
         listVideos({ status: DOCUMENT_STATUS_REVISIO, limit: 1 }),
       ]);
-      return pictures.total + videos.total;
+      return documents.total + pictures.total + videos.total;
     },
     refetchInterval: 30_000,
     staleTime: 15_000,

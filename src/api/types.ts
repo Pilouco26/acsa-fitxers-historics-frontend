@@ -381,15 +381,17 @@ export interface FolderListResponse {
 
 // --- Media (pictures & videos) ---
 
-export type MediaOwnerType = "FAMILIA" | "EMPRESA";
 export type MediaKind = "picture" | "video";
 
 export interface PictureOut {
   id: number;
   name: string;
   relative_path: string;
+  /** Hub folder under the media root (`media/<folder>/…`). */
+  folder?: string | null;
+  /** @deprecated Prefer `folder` (backend field name). */
+  company_folder?: string | null;
   date: string | null;
-  type: MediaOwnerType;
   original_name: string | null;
   proposed_name: string | null;
   status: string | null;
@@ -418,19 +420,85 @@ export interface VideoListResponse {
 
 export interface MediaFilters {
   status?: string;
-  type?: MediaOwnerType;
   q?: string;
+  /** Filter by media hub folder (`GET /pictures?folder=`). */
+  folder?: string;
+  /** @deprecated Prefer `folder`. */
+  company_folder?: string;
   limit?: number;
   offset?: number;
 }
 
+/** Known values for `GET /folders?root=`. */
+export type FolderRoot = "archive" | "media";
+
 export interface MediaUpdate {
   proposed_name?: string | null;
-  type?: MediaOwnerType;
   date?: string | null;
   summary?: string | null;
   location_guess?: string | null;
   approve?: boolean;
+}
+
+export interface MediaMoveRequest {
+  dest_folder: string;
+  dest_name?: string | null;
+  dry_run?: boolean;
+}
+
+export interface MediaMoveResponse {
+  media_id: number;
+  kind: string;
+  src_path: string;
+  dest_path: string;
+  relative_path: string;
+  folder: string;
+  filename: string;
+  dry_run: boolean;
+  unchanged?: boolean;
+  collision_resolved?: boolean;
+}
+
+/** Ranked routing strategies from `POST /media/guess-route`. */
+export type MediaRouteStrategy =
+  | "aligned"
+  | "archive_mirror"
+  | "media_match"
+  | "new_folder";
+
+export interface MediaGuessRouteCandidate {
+  strategy: MediaRouteStrategy;
+  dest_folder: string;
+  score?: number | null;
+}
+
+export interface MediaGuessRouteResponse {
+  media_id: number;
+  kind: MediaKind;
+  dest_folder: string;
+  strategy: MediaRouteStrategy;
+  candidates?: MediaGuessRouteCandidate[] | null;
+}
+
+export interface MediaRouteRequest {
+  dest_folder?: string;
+  strategy?: MediaRouteStrategy;
+  dry_run?: boolean;
+}
+
+export interface MediaRouteResponse {
+  media_id: number;
+  kind: MediaKind;
+  dest_folder: string;
+  strategy?: MediaRouteStrategy | null;
+  src_path?: string;
+  dest_path?: string;
+  relative_path?: string;
+  folder?: string;
+  filename?: string;
+  dry_run?: boolean;
+  unchanged?: boolean;
+  collision_resolved?: boolean;
 }
 
 export interface MediaUploadOut {
@@ -439,7 +507,6 @@ export interface MediaUploadOut {
   status: string;
   id: number;
   media_kind: MediaKind;
-  type: MediaOwnerType;
 }
 
 export interface MediaBatchUploadOut {
@@ -470,4 +537,56 @@ export interface MediaAnalyzeResult {
     dry_run: boolean;
   };
   files: MediaAnalyzeResultFile[];
+}
+
+/** Sticky notes board — mirrors Automatització `/notes` API. */
+export type NoteColor =
+  | "yellow"
+  | "pink"
+  | "blue"
+  | "green"
+  | "orange"
+  | "purple";
+
+export interface NoteOut {
+  id: string;
+  title: string;
+  body: string;
+  color: NoteColor;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  rotation: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NoteCreate {
+  title?: string;
+  body?: string;
+  color?: NoteColor;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+}
+
+export interface NoteUpdate {
+  title?: string;
+  body?: string;
+  color?: NoteColor;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  z_index?: number;
+  rotation?: number;
+}
+
+export interface NoteListResponse {
+  items: NoteOut[];
+  total: number;
 }

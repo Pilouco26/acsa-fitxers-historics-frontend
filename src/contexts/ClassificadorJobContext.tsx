@@ -11,6 +11,9 @@ import { useMutation } from "@tanstack/react-query";
 import {
   assignDocuments,
   cancelJob,
+  guessMediaRoute,
+  listPictures,
+  listVideos,
   startAnalyzeJob,
   startMediaAnalyzeJob,
   ApiError,
@@ -18,7 +21,8 @@ import {
   isUnauthorizedError,
 } from "@/api/client";
 import { useJobPolling } from "@/hooks/useJobPolling";
-import type { JobOut } from "@/api/types";
+import type { JobOut, MediaAnalyzeResultFile, MediaKind } from "@/api/types";
+import { DOCUMENT_STATUS_REVISIO } from "@/constants/globals";
 
 export type ClassificadorContentKind = "documents" | "media";
 
@@ -29,11 +33,45 @@ interface ClassificadorJobContextValue {
   authError: boolean;
   isStarting: boolean;
   isAssigning: boolean;
+  isRouting: boolean;
   busy: boolean;
   isActive: boolean;
   contentKind: ClassificadorContentKind | null;
   startAnalyze: (kind: ClassificadorContentKind) => void;
   cancel: () => void;
+}
+
+function mediaAnalyzeFiles(
+  result: Record<string, unknown> | null | undefined,
+): MediaAnalyzeResultFile[] {
+  if (!result || !Array.isArray(result.files)) return [];
+  return result.files.filter((entry): entry is MediaAnalyzeResultFile => {
+    if (entry == null || typeof entry !== "object") return false;
+    const file = entry as MediaAnalyzeResultFile;
+    return (
+      typeof file.id === "number" &&
+      (file.kind === "picture" || file.kind === "video")
+    );
+  });
+}
+
+async function listRevisioMediaForRouting(): Promise<
+  { id: number; kind: MediaKind }[]
+> {
+  const [pictures, videos] = await Promise.all([
+    listPictures({ status: DOCUMENT_STATUS_REVISIO, limit: 200 }),
+    listVideos({ status: DOCUMENT_STATUS_REVISIO, limit: 200 }),
+  ]);
+  return [
+    ...(pictures.items ?? []).map((item) => ({
+      id: item.id,
+      kind: "picture" as const,
+    })),
+    ...(videos.items ?? []).map((item) => ({
+      id: item.id,
+      kind: "video" as const,
+    })),
+  ];
 }
 
 const ClassificadorJobContext =
@@ -45,9 +83,11 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isRouting, setIsRouting] = useState(false);
   const [contentKind, setContentKind] =
     useState<ClassificadorContentKind | null>(null);
   const assignedForJobRef = useRef<string | null>(null);
+  const routedForJobRef = useRef<string | null>(null);
 
   const stopForUnauthorized = useCallback(() => {
     setAuthError(true);
@@ -55,6 +95,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     setJobId(null);
     setJob(null);
     setIsAssigning(false);
+    setIsRouting(false);
   }, []);
 
   const handlePollingError = useCallback(
@@ -109,6 +150,69 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     };
   }, [jobId, job?.status, contentKind, stopForUnauthorized]);
 
+  useEffect(() => {
+    if (!jobId || job?.status !== "completed") return;
+    if (contentKind !== "media") return;
+    if (routedForJobRef.current === jobId) return;
+    routedForJobRef.current = jobId;
+
+    let cancelled = false;
+    setIsRouting(true);
+
+    (async () => {
+      try {
+        const fromJob = mediaAnalyzeFiles(job.result);
+        const targets =
+          fromJob.length > 0
+            ? fromJob.map((file) => ({ id: file.id, kind: file.kind }))
+            : await listRevisioMediaForRouting();
+
+        const results = await Promise.allSettled(
+          targets.map(({ id, kind }) => guessMediaRoute(id, kind)),
+        );
+        const failures = results.filter(
+          (result) => result.status === "rejected",
+        );
+        if (!cancelled) {
+          if (failures.length > 0) {
+            const first = failures[0];
+            const err =
+              first.status === "rejected" ? first.reason : undefined;
+            if (isUnauthorizedError(err)) {
+              stopForUnauthorized();
+              return;
+            }
+            setError(
+              err instanceof ApiError
+                ? err.message
+                : "Error en calcular la carpeta de destinació",
+            );
+          } else {
+            setError(null);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          if (isUnauthorizedError(err)) {
+            stopForUnauthorized();
+            return;
+          }
+          setError(
+            err instanceof ApiError
+              ? err.message
+              : "Error en calcular la carpeta de destinació",
+          );
+        }
+      } finally {
+        if (!cancelled) setIsRouting(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, job?.status, job?.result, contentKind, stopForUnauthorized]);
+
   const analyzeDocumentsMutation = useMutation({
     mutationFn: () =>
       startAnalyzeJob({
@@ -120,7 +224,9 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
       }),
     onSuccess: (data) => {
       assignedForJobRef.current = null;
+      routedForJobRef.current = null;
       setIsAssigning(false);
+      setIsRouting(false);
       setContentKind("documents");
       setAuthError(false);
       setJobId(data.job_id);
@@ -149,7 +255,9 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
       }),
     onSuccess: (data) => {
       assignedForJobRef.current = null;
+      routedForJobRef.current = null;
       setIsAssigning(false);
+      setIsRouting(false);
       setContentKind("media");
       setAuthError(false);
       setJobId(data.job_id);
@@ -181,6 +289,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
   const busy =
     isStarting ||
     isAssigning ||
+    isRouting ||
     job?.status === "pending" ||
     job?.status === "running";
   const isActive = busy;
@@ -211,6 +320,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
         authError,
         isStarting,
         isAssigning,
+        isRouting,
         busy,
         isActive,
         contentKind,
