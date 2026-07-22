@@ -92,6 +92,14 @@ export function MediaCatalogPanel({
   const folderFilter = folder?.trim() || undefined;
   const detailVisible = Boolean(selected && detailOpen);
 
+  useEffect(() => {
+    setSelected(null);
+    setDetailOpen(false);
+    setLightbox(null);
+    setSelectedKeys(new Set());
+    setSearch("");
+  }, [folderFilter, kind]);
+
   const filters = {
     status: DOCUMENT_STATUS_OK,
     q: debouncedSearch || undefined,

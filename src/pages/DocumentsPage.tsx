@@ -92,6 +92,7 @@ export function DocumentsPage() {
 
   const [search, setSearch] = useState("");
   const [filterFolder, setFilterFolder] = useState(folderFromUrl);
+  const [syncedUrlFolder, setSyncedUrlFolder] = useState(folderFromUrl);
   const [filterProposedName, setFilterProposedName] = useState("");
   const [filterOriginalName, setFilterOriginalName] = useState("");
   const [filterDocTypeCa, setFilterDocTypeCa] = useState("");
@@ -102,6 +103,24 @@ export function DocumentsPage() {
   const debouncedFilterProposedName = useDebouncedValue(filterProposedName);
   const debouncedFilterOriginalName = useDebouncedValue(filterOriginalName);
   const debouncedFilterFinalDate = useDebouncedValue(filterFinalDate);
+
+  // Keep filter field in sync with URL on navigation (same render, not useEffect),
+  // so keep-alive remounts do not briefly keep the previous folder.
+  const urlFolderPendingSync =
+    showListChrome && folderFromUrl !== syncedUrlFolder;
+  if (urlFolderPendingSync) {
+    setSyncedUrlFolder(folderFromUrl);
+    setFilterFolder(folderFromUrl);
+  }
+
+  // Apply folder immediately on URL navigation. Debounce only while the user is
+  // typing in the filter field (value diverged from the URL).
+  const folderForFilters = urlFolderPendingSync
+    ? folderFromUrl
+    : filterFolder === folderFromUrl
+      ? filterFolder
+      : debouncedFilterFolder;
+
   const { data: filterOptions } = useDocumentFilterOptions(
     DOCUMENT_STATUS_OK,
     { enabled: showListChrome },
@@ -116,11 +135,6 @@ export function DocumentsPage() {
     staleTime: 5 * 60 * 1000,
     enabled: showListChrome,
   });
-
-  useEffect(() => {
-    if (!showListChrome) return;
-    setFilterFolder(folderFromUrl);
-  }, [showListChrome, folderFromUrl]);
 
   const [orderBy, setOrderBy] = useState<DocumentOrderBy | null>(null);
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("asc");
@@ -175,7 +189,7 @@ export function DocumentsPage() {
     setPage(0);
   }, [
     debouncedSearch,
-    debouncedFilterFolder,
+    folderForFilters,
     debouncedFilterProposedName,
     debouncedFilterOriginalName,
     filterDocTypeCa,
@@ -190,7 +204,7 @@ export function DocumentsPage() {
   const activeFilters = useMemo(
     () => ({
       q: debouncedSearch || undefined,
-      folder: debouncedFilterFolder || undefined,
+      folder: folderForFilters || undefined,
       proposed_name: debouncedFilterProposedName || undefined,
       original_name: debouncedFilterOriginalName || undefined,
       doc_type_ca: filterDocTypeCa || undefined,
@@ -199,7 +213,7 @@ export function DocumentsPage() {
     }),
     [
       debouncedSearch,
-      debouncedFilterFolder,
+      folderForFilters,
       debouncedFilterProposedName,
       debouncedFilterOriginalName,
       filterDocTypeCa,
