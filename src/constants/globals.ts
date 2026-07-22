@@ -13,3 +13,4 @@ export const LIST_PANEL_ROW_HEIGHT_PX = 42;
 
 export const DOCUMENT_STATUS_OK = "ok";
 export const DOCUMENT_STATUS_REVISIO = "revisio";
+export const DOCUMENT_STATUS_PENDING = "pending";

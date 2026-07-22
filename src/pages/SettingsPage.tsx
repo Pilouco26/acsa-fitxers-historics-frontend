@@ -1,14 +1,21 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getSettings, updateSettings, ApiError } from "@/api/client";
+import {
+  getAdminConfigStatus,
+  getSettings,
+  updateSettings,
+  ApiError,
+} from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
 import {
   DEFAULT_GEMINI_MODEL,
   GEMINI_MODEL_OPTIONS,
   normalizeGeminiModelId,
 } from "@/constants/geminiModels";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function SettingsPage() {
+  const { canConfigure, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -21,6 +28,13 @@ export function SettingsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["settings"],
     queryFn: getSettings,
+  });
+
+  const configStatusQuery = useQuery({
+    queryKey: ["admin-config-status"],
+    queryFn: getAdminConfigStatus,
+    enabled: isAdmin,
+    retry: false,
   });
 
   useEffect(() => {
@@ -44,6 +58,7 @@ export function SettingsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-config-status"] });
       setGeminiKey("");
       setGeminiKeyBackup("");
       setSuccess(true);
@@ -64,8 +79,19 @@ export function SettingsPage() {
     <>
       <PageHeader
         title="Configuració"
-        description="Carpetes d'entrada i sortida, claus API de Gemini (principal i de reserva) i model d'IA."
+        description={
+          canConfigure
+            ? "Carpetes d'entrada i sortida, claus API de Gemini (principal i de reserva) i model d'IA."
+            : "Consulta de la configuració del sistema (només lectura)."
+        }
       />
+
+      {!canConfigure && (
+        <div className="alert alert-info">
+          Només els usuaris amb rol d&apos;administrador poden modificar la
+          configuració.
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
       {success && (
@@ -79,6 +105,8 @@ export function SettingsPage() {
             id="input-folder"
             value={inputFolder}
             onChange={(e) => setInputFolder(e.target.value)}
+            readOnly={!canConfigure}
+            disabled={!canConfigure}
           />
         </div>
 
@@ -88,6 +116,8 @@ export function SettingsPage() {
             id="output-folder"
             value={outputFolder}
             onChange={(e) => setOutputFolder(e.target.value)}
+            readOnly={!canConfigure}
+            disabled={!canConfigure}
           />
         </div>
 
@@ -106,6 +136,8 @@ export function SettingsPage() {
             placeholder="Deixeu en blanc per no canviar"
             value={geminiKey}
             onChange={(e) => setGeminiKey(e.target.value)}
+            readOnly={!canConfigure}
+            disabled={!canConfigure}
           />
         </div>
 
@@ -124,45 +156,85 @@ export function SettingsPage() {
             placeholder="Deixeu en blanc per no canviar"
             value={geminiKeyBackup}
             onChange={(e) => setGeminiKeyBackup(e.target.value)}
+            readOnly={!canConfigure}
+            disabled={!canConfigure}
           />
         </div>
 
         <div className="field">
           <label htmlFor="gemini-model">Model Gemini</label>
-          <input
+          <select
             id="gemini-model"
-            list="gemini-model-options"
             value={geminiModel}
-            placeholder="p. ex. gemini-2.5-flash"
             onChange={(e) => setGeminiModel(e.target.value)}
-            onBlur={() =>
-              setGeminiModel((current) => normalizeGeminiModelId(current))
-            }
-          />
-          <datalist id="gemini-model-options">
+            disabled={!canConfigure}
+          >
+            {!GEMINI_MODEL_OPTIONS.some((o) => o.value === geminiModel) &&
+              geminiModel && (
+                <option value={geminiModel}>{geminiModel}</option>
+              )}
             {GEMINI_MODEL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
-          </datalist>
+          </select>
         </div>
 
-        <div className="btn-row">
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={mutation.isPending}
-            onClick={() => {
-              const model = normalizeGeminiModelId(geminiModel);
-              setGeminiModel(model);
-              mutation.mutate(model);
-            }}
-          >
-            Desar configuració
-          </button>
-        </div>
+        {canConfigure ? (
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={mutation.isPending}
+              onClick={() => {
+                const model = normalizeGeminiModelId(geminiModel);
+                setGeminiModel(model);
+                mutation.mutate(model);
+              }}
+            >
+              Desar configuració
+            </button>
+          </div>
+        ) : null}
       </div>
+
+      {isAdmin && configStatusQuery.data ? (
+        <div className="card admin-config-status">
+          <h3>Estat del sistema</h3>
+          <ul className="admin-config-status-list">
+            <li>
+              Carpeta d&apos;entrada:{" "}
+              {configStatusQuery.data.input_folder_exists ? "existeix" : "no trobada"}
+              {configStatusQuery.data.input_folder_writable
+                ? " · escriptura OK"
+                : " · sense escriptura"}
+            </li>
+            <li>
+              Carpeta de sortida:{" "}
+              {configStatusQuery.data.output_folder_exists ? "existeix" : "no trobada"}
+              {configStatusQuery.data.output_folder_writable
+                ? " · escriptura OK"
+                : " · sense escriptura"}
+            </li>
+            <li>
+              Gemini:{" "}
+              {configStatusQuery.data.gemini_configured
+                ? "configurat"
+                : "pendent"}
+              {configStatusQuery.data.gemini_backup_configured
+                ? " · reserva OK"
+                : ""}
+            </li>
+            {configStatusQuery.data.app_version ? (
+              <li>Versió: {configStatusQuery.data.app_version}</li>
+            ) : null}
+            {configStatusQuery.data.git_sha ? (
+              <li>Git: {configStatusQuery.data.git_sha}</li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
     </>
   );
 }

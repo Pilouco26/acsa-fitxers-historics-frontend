@@ -5,10 +5,14 @@ import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { MoreNavMenu } from "@/components/MoreNavMenu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
+import {
+  ADMIN_VIEW_MODE_OPTIONS,
+  type AdminViewMode,
+} from "@/constants/appMode";
 import { DOCUMENT_STATUS_REVISIO } from "@/constants/globals";
 import logoAcsa from "../../images/Logo_ACSA_02.png";
 
-const mainNav = [
+const fluxNav = [
   { to: "/upload", label: "Pujar" },
   { to: "/classificador", label: "Classificador" },
   { to: "/revisio", label: "Revisió", badgeKey: "revisio" as const },
@@ -16,18 +20,24 @@ const mainNav = [
   { to: "/notes", label: "Notes" },
 ];
 
-const mediaNav = [{ to: "/media/catalog", label: "Catàleg mitjans" }];
-
-const secondaryNav = [
+const toolsNav = [
   { to: "/comparador", label: "Comparador" },
-  { to: "/settings", label: "Configuració" },
+  { to: "/recuperacio", label: "Recuperació" },
 ];
 
-const adminNav = [
+const settingsNavItem = { to: "/settings", label: "Configuració" };
+
+const adminOpsNav = [
+  { to: "/settings", label: "Configuració" },
+  { to: "/admin/logs", label: "Logs" },
+  { to: "/admin/services", label: "Serveis" },
+  { to: "/admin/jobs", label: "Treballs" },
+];
+
+const adminToolsNav = [
   { to: "/admin/analisi", label: "Anàlisi" },
   { to: "/admin/edicions", label: "Edicions" },
   { to: "/correus", label: "Correus" },
-  { to: "/recuperacio", label: "Recuperació" },
 ];
 
 function NavSection({
@@ -66,7 +76,14 @@ function NavSection({
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const {
+    logout,
+    userTypeLabel,
+    roleLabel,
+    isAdmin,
+    viewMode,
+    setViewMode,
+  } = useAuth();
   const { job, jobId, isActive, isStarting, cancel } = useClassificadorJob();
   const onClassificador = location.pathname === "/classificador";
   const showGlobalJobProgress = !onClassificador && isActive;
@@ -75,6 +92,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
     logout();
     navigate("/login", { replace: true });
   }
+
+  const moreNavSections = isAdmin
+    ? [
+        { title: "Flux principal", items: fluxNav },
+        { title: "Eines", items: toolsNav },
+        { title: "Administració", items: adminToolsNav },
+      ]
+    : [
+        {
+          title: "Eines",
+          items: [...toolsNav, settingsNavItem],
+        },
+      ];
 
   const revisioCountQuery = useQuery({
     queryKey: ["revisio-count"],
@@ -96,23 +126,48 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="sidebar-brand">
           <img src={logoAcsa} alt="ACSA" className="sidebar-brand-logo" />
           <p>Fitxers històrics</p>
+          {isAdmin ? (
+            <div className="sidebar-mode-switch" role="group" aria-label="Mode de dades">
+              {ADMIN_VIEW_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={viewMode === option ? "active" : undefined}
+                  onClick={() => setViewMode(option as AdminViewMode)}
+                >
+                  {option === "ALL"
+                    ? "Tots"
+                    : option === "EMPRESA"
+                      ? "Empresa"
+                      : "Personal"}
+                </button>
+              ))}
+            </div>
+          ) : userTypeLabel ? (
+            <p className="sidebar-mode" aria-label={`Mode ${userTypeLabel}`}>
+              {userTypeLabel}
+              {roleLabel && roleLabel !== userTypeLabel ? ` · ${roleLabel}` : ""}
+            </p>
+          ) : null}
+          {isAdmin && roleLabel ? (
+            <p className="sidebar-mode sidebar-mode--role" aria-label={`Rol ${roleLabel}`}>
+              {roleLabel}
+            </p>
+          ) : null}
         </div>
         <nav className="sidebar-nav">
-          <NavSection
-            title="Flux principal"
-            items={mainNav}
-            badgeCount={revisioCountQuery.data}
-          />
-          <NavSection title="Mitjans" items={mediaNav} />
+          {isAdmin ? (
+            <NavSection title="Operació" items={adminOpsNav} />
+          ) : (
+            <NavSection
+              title="Flux principal"
+              items={fluxNav}
+              badgeCount={revisioCountQuery.data}
+            />
+          )}
         </nav>
         <div className="sidebar-footer">
-          <MoreNavMenu
-            sections={[
-              { title: "Eines", items: secondaryNav },
-              { title: "Administració", items: adminNav },
-            ]}
-            onLogout={handleLogout}
-          />
+          <MoreNavMenu sections={moreNavSections} onLogout={handleLogout} />
         </div>
       </aside>
       <div className="main-area">

@@ -1,5 +1,8 @@
 import { useEffect, useState, type ComponentType } from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { AdminJobsPage } from "@/pages/AdminJobsPage";
+import { AdminLogsPage } from "@/pages/AdminLogsPage";
+import { AdminServicesPage } from "@/pages/AdminServicesPage";
 import { AnalisiPage } from "@/pages/AnalisiPage";
 import { ClassificadorPage } from "@/pages/ClassificadorPage";
 import { ComparadorPage } from "@/pages/ComparadorPage";
@@ -12,6 +15,8 @@ import { RecuperacioPage } from "@/pages/RecuperacioPage";
 import { RevisioPage } from "@/pages/RevisioPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UploadPage } from "@/pages/UploadPage";
+import { useAuth } from "@/contexts/AuthContext";
+import { homePathForRole } from "@/constants/userRole";
 
 const ROUTES: { path: string; Page: ComponentType }[] = [
   { path: "/upload", Page: UploadPage },
@@ -22,11 +27,23 @@ const ROUTES: { path: string; Page: ComponentType }[] = [
   { path: "/notes", Page: NotesPage },
   { path: "/settings", Page: SettingsPage },
   { path: "/comparador", Page: ComparadorPage },
+  { path: "/admin/logs", Page: AdminLogsPage },
+  { path: "/admin/services", Page: AdminServicesPage },
+  { path: "/admin/jobs", Page: AdminJobsPage },
   { path: "/admin/analisi", Page: AnalisiPage },
   { path: "/admin/edicions", Page: EdicionsPage },
   { path: "/correus", Page: CorreusPage },
   { path: "/recuperacio", Page: RecuperacioPage },
 ];
+
+const ADMIN_ONLY_PATHS = new Set([
+  "/admin/logs",
+  "/admin/services",
+  "/admin/jobs",
+  "/admin/analisi",
+  "/admin/edicions",
+  "/correus",
+]);
 
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/media": "/upload",
@@ -50,9 +67,11 @@ function resolveRoutePath(pathname: string): string | null {
  */
 export function PersistentPages() {
   const location = useLocation();
+  const { isAdmin, role } = useAuth();
   const path = location.pathname;
   const legacyTarget = LEGACY_REDIRECTS[path];
-  const activePath = path === "/" ? "/upload" : resolveRoutePath(path);
+  const homePath = homePathForRole(role);
+  const activePath = path === "/" ? homePath : resolveRoutePath(path);
 
   const [mounted, setMounted] = useState<Set<string>>(() => {
     return activePath && KNOWN_PATHS.has(activePath)
@@ -74,8 +93,16 @@ export function PersistentPages() {
     return <Navigate to={legacyTarget} replace />;
   }
 
+  if (path === "/") {
+    return <Navigate to={homePath} replace />;
+  }
+
+  if (activePath && ADMIN_ONLY_PATHS.has(activePath) && !isAdmin) {
+    return <Navigate to={homePath} replace />;
+  }
+
   if (!activePath || !KNOWN_PATHS.has(activePath)) {
-    return <Navigate to="/upload" replace />;
+    return <Navigate to={homePath} replace />;
   }
 
   return (

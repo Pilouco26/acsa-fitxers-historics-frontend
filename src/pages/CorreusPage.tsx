@@ -11,11 +11,13 @@ import {
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { useAuth } from "@/contexts/AuthContext";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import type { EmailAssignResponse, EmailOut, JobOut } from "@/api/types";
 
 export function CorreusPage() {
   const queryClient = useQueryClient();
+  const { apiMode } = useAuth();
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobOut | null>(null);
   const [assignResult, setAssignResult] = useState<EmailAssignResponse | null>(null);
@@ -51,6 +53,7 @@ export function CorreusPage() {
         source: "emails",
         force,
         dry_run: dryRun,
+        ...(apiMode ? { mode: apiMode } : {}),
       }),
     onSuccess: (result) => {
       setJobId(result.job_id);

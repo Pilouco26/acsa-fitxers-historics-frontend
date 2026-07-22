@@ -105,6 +105,47 @@ select {
   color: var(--color-text-secondary);
 }
 
+.sidebar-mode {
+  margin-top: 0.35rem !important;
+  font-size: 0.7rem !important;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text) !important;
+}
+
+.sidebar-mode--role {
+  margin-top: 0.2rem !important;
+  font-weight: 500;
+  color: var(--color-text-secondary) !important;
+}
+
+.sidebar-mode-switch {
+  display: flex;
+  margin-top: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.sidebar-mode-switch button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0.3rem 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.sidebar-mode-switch button.active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px var(--color-border-light);
+}
+
 .sidebar-nav {
   flex: 1;
   padding: 0.75rem;
@@ -468,6 +509,19 @@ select {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.panel-with-back-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel-with-back-body > .split-view {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 .hub-back-toggle {
@@ -1595,6 +1649,7 @@ select {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   flex: 0 0 auto;
 }
@@ -1604,6 +1659,10 @@ select {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
+}
+
+.pdf-preview-workspace-zoom {
+  margin-left: auto;
 }
 
 .pdf-preview-toolbar-label {
@@ -1637,12 +1696,24 @@ select {
   background: var(--color-surface);
 }
 
+.pdf-preview-frame[data-pinching="true"] {
+  touch-action: none;
+  overflow: hidden;
+}
+
+.pdf-preview-frame[data-zoomed="true"] {
+  /* Keep scroll origin predictable when the canvas is larger than the frame. */
+  scroll-behavior: auto;
+}
+
 .pdf-preview-canvas,
 .pdf-preview-frame canvas {
   display: block;
   margin: 0 auto;
   height: auto;
   max-width: none;
+  transform-origin: center center;
+  will-change: transform;
 }
 
 /* Media (picture / video) preview */
@@ -1673,6 +1744,80 @@ select {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+
+.media-preview-video-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.media-preview-video-wrap .media-preview-media {
+  position: relative;
+  z-index: 0;
+}
+
+/* Leave the native control bar clickable (approx. bottom chrome). */
+.media-preview-video-hit {
+  position: absolute;
+  inset: 0 0 3rem 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.media-preview-video-flash {
+  position: absolute;
+  inset: 0 0 3rem 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.media-preview-video-flash-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  animation: media-preview-flash-pop 0.55s ease-out forwards;
+}
+
+.media-preview-video-flash-glyph {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: block;
+}
+
+@keyframes media-preview-flash-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
 }
 
 .media-preview-shell--thumb .media-preview-media {
@@ -2900,6 +3045,21 @@ select {
   .split-detail-preview .pdf-preview-frame {
     min-height: min(55vh, 24rem);
   }
+
+  .pdf-preview-toolbar {
+    gap: 0.35rem;
+  }
+
+  .pdf-preview-workspace-zoom {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .pdf-preview-toolbar-label {
+    min-width: 3rem;
+    font-size: 0.8125rem;
+  }
 }
 
 /* Touch targets — tablets / phones by width, and any coarse pointer (Surface, etc.) */
@@ -3422,5 +3582,141 @@ select {
 @media (max-width: 900px) {
   .notes-hint {
     display: none;
+  }
+}
+
+/* Admin ops (logs / services / jobs) */
+.admin-ops-toolbar {
+  margin-bottom: 1rem;
+}
+
+.admin-ops-filters {
+  margin-bottom: 0.75rem;
+}
+
+.admin-ops-live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.admin-ops-meta {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  align-self: center;
+}
+
+.admin-log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 20rem;
+}
+
+.admin-log-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.admin-log-viewer {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  max-height: min(65vh, 36rem);
+  overflow: auto;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.admin-log-line {
+  display: grid;
+  grid-template-columns: 7.5rem 4.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.admin-log-line--error {
+  color: #d70015;
+}
+
+.admin-log-line--warn {
+  color: #c93400;
+}
+
+.admin-log-line--debug {
+  color: var(--color-text-secondary);
+}
+
+.admin-log-ts {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.admin-log-level {
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}
+
+.admin-log-msg {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.admin-service-actions {
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.admin-service-details h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.admin-service-detail {
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.admin-service-detail:last-child {
+  margin-bottom: 0;
+}
+
+.admin-service-detail ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.admin-job-error {
+  color: #d70015;
+}
+
+.admin-config-status h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.admin-config-status-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.admin-config-status-list li {
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 720px) {
+  .admin-log-line {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+    padding: 0.35rem 0;
   }
 }

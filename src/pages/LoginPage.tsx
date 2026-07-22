@@ -1,17 +1,20 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getLoginErrorMessage, useAuth } from "@/contexts/AuthContext";
+import { getUserRole } from "@/config";
+import { homePathForRole, normalizeUserRole } from "@/constants/userRole";
 import logoAcsa from "../../images/Logo_ACSA_02.png";
 
 const USERNAME_MAX = 64;
 
 export function LoginPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, role } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from =
-    (location.state as { from?: { pathname?: string } } | null)?.from
-      ?.pathname || "/upload";
+  const requestedFrom = (
+    location.state as { from?: { pathname?: string } } | null
+  )?.from?.pathname;
+  const from = requestedFrom || homePathForRole(role);
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +32,13 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(username, password);
-      navigate(from, { replace: true });
+      const nextRole = normalizeUserRole(getUserRole());
+      const fallback = homePathForRole(nextRole);
+      const target =
+        requestedFrom && requestedFrom !== "/login"
+          ? requestedFrom
+          : fallback;
+      navigate(target, { replace: true });
     } catch (err) {
       setError(getLoginErrorMessage(err));
     } finally {

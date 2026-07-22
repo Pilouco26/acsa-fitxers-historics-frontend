@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { listFolders, listPictures, listVideos } from "@/api/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { DOCUMENT_STATUS_OK } from "@/constants/globals";
 import {
   documentsFolderPickPath,
@@ -25,8 +26,24 @@ export type HubFolderCapabilities = {
 export function mergeFolderBubbles(
   archiveNames: string[],
   mediaNames: string[],
+  mediaContents?: {
+    pictureFolders?: Iterable<string>;
+    videoFolders?: Iterable<string>;
+  },
 ): HubFolderCapabilities[] {
   const map = new Map<string, HubFolderCapabilities>();
+  const pictureFolders = new Set(
+    [...(mediaContents?.pictureFolders ?? [])]
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+  const videoFolders = new Set(
+    [...(mediaContents?.videoFolders ?? [])]
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+  // When probes are omitted, keep legacy behaviour (any media folder → both).
+  const probesKnown = mediaContents != null;
 
   for (const name of archiveNames) {
     const key = name.trim();
@@ -47,17 +64,18 @@ export function mergeFolderBubbles(
   for (const name of mediaNames) {
     const key = name.trim();
     if (!key || isHiddenHubFolder(key)) continue;
+    const hasPictures = probesKnown ? pictureFolders.has(key) : true;
+    const hasVideos = probesKnown ? videoFolders.has(key) : true;
     const existing = map.get(key);
     if (existing) {
-      // Shared media root: folder may contain photos and/or videos.
-      existing.hasPictures = true;
-      existing.hasVideos = true;
+      existing.hasPictures = existing.hasPictures || hasPictures;
+      existing.hasVideos = existing.hasVideos || hasVideos;
     } else {
       map.set(key, {
         name: key,
         hasDocuments: false,
-        hasPictures: true,
-        hasVideos: true,
+        hasPictures,
+        hasVideos,
       });
     }
   }
@@ -68,39 +86,99 @@ export function mergeFolderBubbles(
 }
 
 function useHubFolders() {
+  const { apiMode } = useAuth();
   const archiveQuery = useQuery({
-    queryKey: ["folders", FOLDER_ROOT_ARCHIVE],
-    queryFn: () => listFolders({ root: FOLDER_ROOT_ARCHIVE }),
+    queryKey: ["folders", FOLDER_ROOT_ARCHIVE, apiMode ?? "ALL"],
+    queryFn: () =>
+      listFolders({
+        root: FOLDER_ROOT_ARCHIVE,
+        ...(apiMode ? { mode: apiMode } : {}),
+      }),
     staleTime: 5 * 60 * 1000,
   });
 
   const mediaQuery = useQuery({
-    queryKey: ["folders", FOLDER_ROOT_MEDIA],
-    queryFn: () => listFolders({ root: FOLDER_ROOT_MEDIA }),
+    queryKey: ["folders", FOLDER_ROOT_MEDIA, apiMode ?? "ALL"],
+    queryFn: () =>
+      listFolders({
+        root: FOLDER_ROOT_MEDIA,
+        ...(apiMode ? { mode: apiMode } : {}),
+      }),
     staleTime: 5 * 60 * 1000,
   });
 
-  const folders = useMemo(
-    () =>
-      mergeFolderBubbles(
-        archiveQuery.isError
-          ? []
-          : (archiveQuery.data?.items.map((f) => f.name) ?? []),
-        mediaQuery.isError
-          ? []
-          : (mediaQuery.data?.items.map((f) => f.name) ?? []),
-      ),
-    [
-      archiveQuery.data?.items,
-      archiveQuery.isError,
-      mediaQuery.data?.items,
-      mediaQuery.isError,
-    ],
-  );
+  const mediaFolderNames = useMemo(() => {
+    if (mediaQuery.isError) return [];
+    return (mediaQuery.data?.items ?? [])
+      .map((f) => f.name.trim())
+      .filter((name) => name && !isHiddenHubFolder(name));
+  }, [mediaQuery.data?.items, mediaQuery.isError]);
+
+  const mediaContentQuery = useQuery({
+    queryKey: ["hub-media-folder-contents", mediaFolderNames],
+    enabled: mediaFolderNames.length > 0,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const pictureFolders = new Set<string>();
+      const videoFolders = new Set<string>();
+
+      await Promise.all(
+        mediaFolderNames.map(async (folderName) => {
+          const [pictures, videos] = await Promise.all([
+            listPictures({
+              folder: folderName,
+              limit: 1,
+              status: DOCUMENT_STATUS_OK,
+            }),
+            listVideos({
+              folder: folderName,
+              limit: 1,
+              status: DOCUMENT_STATUS_OK,
+            }),
+          ]);
+          if (pictures.total > 0) pictureFolders.add(folderName);
+          if (videos.total > 0) videoFolders.add(folderName);
+        }),
+      );
+
+      return { pictureFolders, videoFolders };
+    },
+  });
+
+  const folders = useMemo(() => {
+    const archiveNames = archiveQuery.isError
+      ? []
+      : (archiveQuery.data?.items.map((f) => f.name) ?? []);
+    const mediaNames = mediaQuery.isError ? [] : mediaFolderNames;
+
+    // While probing, avoid flashing false Vídeo/Fotos badges on every media folder.
+    const pictureFolders =
+      mediaContentQuery.data?.pictureFolders ??
+      (mediaNames.length > 0 ? [] : undefined);
+    const videoFolders =
+      mediaContentQuery.data?.videoFolders ??
+      (mediaNames.length > 0 ? [] : undefined);
+
+    return mergeFolderBubbles(archiveNames, mediaNames, {
+      pictureFolders,
+      videoFolders,
+    });
+  }, [
+    archiveQuery.data?.items,
+    archiveQuery.isError,
+    mediaFolderNames,
+    mediaQuery.isError,
+    mediaContentQuery.data?.pictureFolders,
+    mediaContentQuery.data?.videoFolders,
+    mediaContentQuery.isLoading,
+  ]);
 
   const isLoading =
     (archiveQuery.isLoading && !archiveQuery.isError) ||
-    (mediaQuery.isLoading && !mediaQuery.isError);
+    (mediaQuery.isLoading && !mediaQuery.isError) ||
+    (mediaFolderNames.length > 0 &&
+      mediaContentQuery.isLoading &&
+      !mediaContentQuery.isError);
 
   return { folders, isLoading };
 }
@@ -348,6 +426,10 @@ function PickOptionIcon({ kind }: { kind: PickOptionKey }) {
 /** Choose Documents / Fotos / Vídeo for a selected folder. */
 export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const skipAutoPick = Boolean(
+    (location.state as { skipAutoPick?: boolean } | null)?.skipAutoPick,
+  );
   const { folders, isLoading } = useHubFolders();
 
   const folder = useMemo(
@@ -452,12 +534,17 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
   const singleOptionPath = options.length === 1 ? options[0].path : null;
   const didAutoSkipRef = useRef(false);
   useEffect(() => {
+    didAutoSkipRef.current = false;
+  }, [folderName]);
+  useEffect(() => {
+    // Coming back from fotos/vídeos must land on the pick screen (no bounce loop).
+    if (skipAutoPick) return;
     if (didAutoSkipRef.current) return;
     if (isLoading) return;
     if (!singleOptionPath) return;
     didAutoSkipRef.current = true;
     navigate(singleOptionPath, { replace: true });
-  }, [isLoading, navigate, singleOptionPath]);
+  }, [isLoading, navigate, singleOptionPath, skipAutoPick]);
 
   return (
     <div className="archive-hub archive-hub--pick">

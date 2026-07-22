@@ -44,6 +44,7 @@ import { hasDocumentListFilters } from "@/utils/documentListTotal";
 import { matchesDocumentFilters } from "@/utils/matchDocumentFilters";
 import { sortDocuments } from "@/utils/sortDocuments";
 import { buildArchiveFolderSuggestions } from "@/utils/folderSuggestions";
+import { useAuth } from "@/contexts/AuthContext";
 
 const COMPACT_VIEWPORT = "(max-width: 600px)";
 
@@ -63,6 +64,7 @@ function sanitizeFilename(name: string): string {
 
 export function DocumentsPage() {
   const queryClient = useQueryClient();
+  const { apiMode } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const listMatch = useMatch({ path: "/documents/list", end: true });
@@ -105,8 +107,12 @@ export function DocumentsPage() {
     { enabled: showListChrome },
   );
   const { data: archiveFolders } = useQuery({
-    queryKey: ["folders", FOLDER_ROOT_ARCHIVE],
-    queryFn: () => listFolders({ root: FOLDER_ROOT_ARCHIVE }),
+    queryKey: ["folders", FOLDER_ROOT_ARCHIVE, apiMode ?? "ALL"],
+    queryFn: () =>
+      listFolders({
+        root: FOLDER_ROOT_ARCHIVE,
+        ...(apiMode ? { mode: apiMode } : {}),
+      }),
     staleTime: 5 * 60 * 1000,
     enabled: showListChrome,
   });

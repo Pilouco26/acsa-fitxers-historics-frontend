@@ -1,10 +1,15 @@
 import type {
+  AdminConfigStatus,
+  AdminJobsResponse,
+  AdminService,
+  AdminServicesResponse,
   AnalyzeJobRequest,
   ApiEnvelope,
   ApplyRequest,
   ApplyResponse,
   AssignRequest,
   AssignResponse,
+  AuditListResponse,
   BatchUploadOut,
   CompareResponse,
   DeletedDocumentFilters,
@@ -29,6 +34,9 @@ import type {
   HealthOut,
   JobCreated,
   JobOut,
+  LogPage,
+  LogQueryParams,
+  LogSourcesResponse,
   MediaAnalyzeJobRequest,
   MediaBatchUploadOut,
   MediaFilters,
@@ -47,6 +55,8 @@ import type {
   PictureListResponse,
   PictureOut,
   RevertResponse,
+  ServiceActionRequest,
+  ServiceActionResult,
   SettingsOut,
   SettingsUpdate,
   UploadOut,
@@ -55,11 +65,17 @@ import type {
 } from "./types";
 import toast from "react-hot-toast";
 import {
-  clearAccessToken,
+  clearSession,
+  clearUserType,
   getAccessToken,
   getApiBaseUrl,
   setAccessToken,
+  setUserRole,
+  setUserType,
+  setUsername,
 } from "@/config";
+import { normalizeAppMode } from "@/constants/appMode";
+import { normalizeUserRole, roleFromAccessToken } from "@/constants/userRole";
 const BASE = getApiBaseUrl();
 
 export class ApiError extends Error {
@@ -79,10 +95,14 @@ export function isUnauthorizedError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 401;
 }
 
+export function isForbiddenError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status === 403;
+}
+
 let redirectingToLogin = false;
 
 export function clearSessionAndRedirectToLogin(): void {
-  clearAccessToken();
+  clearSession();
   if (redirectingToLogin) return;
   if (window.location.pathname === "/login") return;
   redirectingToLogin = true;
@@ -115,6 +135,17 @@ export async function throwIfNotOk(
 async function parseError(res: Response): Promise<string> {
   try {
     const body = await res.json();
+    if (
+      body &&
+      typeof body === "object" &&
+      "status" in body &&
+      (body as { status?: unknown }).status === "error" &&
+      typeof (body as { message?: unknown }).message === "string" &&
+      (body as { message: string }).message
+    ) {
+      return (body as { message: string }).message;
+    }
+    if (typeof body.message === "string" && body.message) return body.message;
     if (typeof body.detail === "string") return body.detail;
     if (Array.isArray(body.detail)) {
       return body.detail.map((d: { msg?: string }) => d.msg).join(", ");
@@ -184,6 +215,14 @@ export interface LoginRequest {
 export interface LoginResponse {
   access_token: string;
   token_type?: string;
+  /**
+   * Tenancy mode: PERSONAL | EMPRESA (legacy FAMILIA accepted by normalize).
+   * May be null for admin accounts.
+   */
+  type: string | null;
+  /** Authorization role: personal | empresa | admin. */
+  role?: string;
+  username?: string;
 }
 
 export async function login(body: LoginRequest): Promise<LoginResponse> {
@@ -204,12 +243,19 @@ export async function login(body: LoginRequest): Promise<LoginResponse> {
     throw new ApiError(500, "Resposta d'inici de sessió invàlida");
   }
   setAccessToken(out.access_token);
+  const mode = normalizeAppMode(out.type);
+  if (mode) setUserType(mode);
+  else clearUserType();
+  const role =
+    normalizeUserRole(out.role) ?? roleFromAccessToken(out.access_token);
+  if (role) setUserRole(role);
+  if (out.username) setUsername(out.username);
   redirectingToLogin = false;
   return out;
 }
 
 export function logout(): void {
-  clearAccessToken();
+  clearSession();
 }
 
 // --- Health ---
@@ -218,13 +264,31 @@ export function getHealth(): Promise<HealthOut> {
   return request<HealthOut>("/health");
 }
 
+function setModeParam(
+  qs: URLSearchParams,
+  mode?: string | null,
+): void {
+  if (mode) qs.set("mode", mode);
+}
+
+export type UploadModeOptions = {
+  /** Admin tenancy filter: PERSONAL | EMPRESA. */
+  mode?: string | null;
+};
+
 // --- Files ---
 
-export async function uploadFile(file: File): Promise<UploadOut> {
+export async function uploadFile(
+  file: File,
+  options?: UploadModeOptions,
+): Promise<UploadOut> {
   try {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`${BASE}/files/upload`, {
+    const qs = new URLSearchParams();
+    setModeParam(qs, options?.mode);
+    const query = qs.toString();
+    const res = await fetch(`${BASE}/files/upload${query ? `?${query}` : ""}`, {
       method: "POST",
       headers: buildHeaders(),
       body: form,
@@ -248,17 +312,26 @@ export async function uploadFile(file: File): Promise<UploadOut> {
   }
 }
 
-export async function uploadBatch(files: File[]): Promise<BatchUploadOut> {
+export async function uploadBatch(
+  files: File[],
+  options?: UploadModeOptions,
+): Promise<BatchUploadOut> {
   try {
     const form = new FormData();
     for (const f of files) {
       form.append("files", f);
     }
-    const res = await fetch(`${BASE}/files/upload/batch`, {
-      method: "POST",
-      headers: buildHeaders(),
-      body: form,
-    });
+    const qs = new URLSearchParams();
+    setModeParam(qs, options?.mode);
+    const query = qs.toString();
+    const res = await fetch(
+      `${BASE}/files/upload/batch${query ? `?${query}` : ""}`,
+      {
+        method: "POST",
+        headers: buildHeaders(),
+        body: form,
+      },
+    );
     await throwIfNotOk(res);
     const body = await res.json();
     const message =
@@ -336,6 +409,7 @@ export function listDeletedDocuments(
   if (params.q) qs.set("q", params.q);
   if (params.limit != null) qs.set("limit", String(params.limit));
   if (params.offset != null) qs.set("offset", String(params.offset));
+  setModeParam(qs, params.mode);
   const query = qs.toString();
   return request<DocumentListResponse>(
     `/documents/deleted${query ? `?${query}` : ""}`,
@@ -502,10 +576,13 @@ export function revertRenames(): Promise<RevertResponse> {
 export function listFolders(params?: {
   folder?: string;
   root?: FolderRoot | string;
+  /** Admin tenancy filter: PERSONAL | EMPRESA. */
+  mode?: string | null;
 }): Promise<FolderListResponse> {
   const qs = new URLSearchParams();
   if (params?.folder) qs.set("folder", params.folder);
   if (params?.root) qs.set("root", params.root);
+  setModeParam(qs, params?.mode);
   const query = qs.toString();
   return request<FolderListResponse>(`/folders${query ? `?${query}` : ""}`);
 }
@@ -573,11 +650,13 @@ function mediaListQuery(params: MediaFilters = {}): string {
 
 export async function uploadMedia(
   file: File,
+  options?: UploadModeOptions,
 ): Promise<MediaUploadOut> {
   try {
     const form = new FormData();
     form.append("file", file);
     const qs = new URLSearchParams({ target: "media" });
+    setModeParam(qs, options?.mode);
     const res = await fetch(`${BASE}/files/upload?${qs}`, {
       method: "POST",
       headers: buildHeaders(),
@@ -616,6 +695,7 @@ export async function uploadMedia(
 
 export async function uploadMediaBatch(
   files: File[],
+  options?: UploadModeOptions,
 ): Promise<MediaBatchUploadOut> {
   try {
     const form = new FormData();
@@ -623,6 +703,7 @@ export async function uploadMediaBatch(
       form.append("files", f);
     }
     const qs = new URLSearchParams({ target: "media" });
+    setModeParam(qs, options?.mode);
     const res = await fetch(`${BASE}/files/upload/batch?${qs}`, {
       method: "POST",
       headers: buildHeaders(),
@@ -755,8 +836,13 @@ export function pictureFileUrl(id: number): string {
   return `${BASE}/pictures/file?${qs}`;
 }
 
-export function videoFileUrl(id: number): string {
+export function videoFileUrl(
+  id: number,
+  options?: { playback?: boolean },
+): string {
   const qs = new URLSearchParams({ id: String(id) });
+  // Lazy Chromium-safe H.264 derivative for in-app <video> preview.
+  if (options?.playback) qs.set("playback", "1");
   return `${BASE}/videos/file?${qs}`;
 }
 
@@ -810,11 +896,24 @@ export async function fetchMediaObjectUrl(
   signal?: AbortSignal,
 ): Promise<string> {
   const res = await fetch(url, {
-    headers: buildHeaders(),
+    headers: buildHeaders({ Accept: "*/*" }),
     signal,
   });
   await throwIfNotOk(res);
-  const blob = await res.blob();
+  const raw = await res.blob();
+  const header = res.headers.get("Content-Type")?.split(";")[0]?.trim() ?? "";
+  const blobType = raw.type?.split(";")[0]?.trim() ?? "";
+  const usable =
+    header &&
+    header !== "application/octet-stream" &&
+    header !== "application/json"
+      ? header
+      : blobType &&
+          blobType !== "application/octet-stream" &&
+          blobType !== "application/json"
+        ? blobType
+        : "";
+  const blob = usable && raw.type === usable ? raw : new Blob([raw], { type: usable || raw.type });
   return URL.createObjectURL(blob);
 }
 
@@ -870,4 +969,109 @@ export function bringNoteToFront(id: string): Promise<NoteOut> {
     { method: "POST" },
     false,
   );
+}
+
+// --- Admin ops ---
+
+function buildLogQuery(params: LogQueryParams): string {
+  const qs = new URLSearchParams();
+  qs.set("source", params.source);
+  if (params.since) qs.set("since", params.since);
+  if (params.since_seconds != null) {
+    qs.set("since_seconds", String(params.since_seconds));
+  }
+  if (params.level) qs.set("level", params.level);
+  if (params.q) qs.set("q", params.q);
+  if (params.job_id) qs.set("job_id", params.job_id);
+  if (params.limit != null) qs.set("limit", String(params.limit));
+  if (params.cursor) qs.set("cursor", params.cursor);
+  return qs.toString();
+}
+
+export function listLogSources(): Promise<LogSourcesResponse> {
+  return request<LogSourcesResponse>("/admin/logs/sources");
+}
+
+export function getAdminLogs(params: LogQueryParams): Promise<LogPage> {
+  return request<LogPage>(`/admin/logs?${buildLogQuery(params)}`);
+}
+
+/** Download filtered logs as a Blob (caller triggers save). */
+export async function downloadAdminLogs(
+  params: LogQueryParams,
+): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${BASE}/admin/logs/download?${buildLogQuery(params)}`, {
+    headers: buildHeaders({ Accept: "*/*" }),
+  });
+  await throwIfNotOk(res);
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disposition);
+  const filename = match
+    ? decodeURIComponent(match[1].replace(/"/g, ""))
+    : `logs-${params.source}.txt`;
+  return { blob, filename };
+}
+
+export function listAdminServices(): Promise<AdminServicesResponse> {
+  return request<AdminServicesResponse>("/admin/services");
+}
+
+export function getAdminService(id: string): Promise<AdminService> {
+  return request<AdminService>(`/admin/services/${encodeURIComponent(id)}`);
+}
+
+export function restartAdminService(
+  id: string,
+  body: ServiceActionRequest = {},
+): Promise<ServiceActionResult> {
+  return request<ServiceActionResult>(
+    `/admin/services/${encodeURIComponent(id)}/restart`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { success: "Reinici sol·licitat", errorPrefix: "Error en reiniciar" },
+  );
+}
+
+export function listAdminAudit(params?: {
+  limit?: number;
+  cursor?: string;
+  action?: string;
+  actor?: string;
+  since?: string;
+}): Promise<AuditListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.action) qs.set("action", params.action);
+  if (params?.actor) qs.set("actor", params.actor);
+  if (params?.since) qs.set("since", params.since);
+  const query = qs.toString();
+  return request<AuditListResponse>(
+    `/admin/audit${query ? `?${query}` : ""}`,
+  );
+}
+
+export function listAdminJobs(params?: {
+  status?: string;
+  type?: string;
+  limit?: number;
+  cursor?: string;
+}): Promise<AdminJobsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.type) qs.set("type", params.type);
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  const query = qs.toString();
+  return request<AdminJobsResponse>(
+    `/admin/jobs${query ? `?${query}` : ""}`,
+  );
+}
+
+export function getAdminConfigStatus(): Promise<AdminConfigStatus> {
+  return request<AdminConfigStatus>("/admin/config/status");
 }

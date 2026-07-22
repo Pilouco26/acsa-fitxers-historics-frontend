@@ -161,6 +161,8 @@ export interface DeletedDocumentFilters {
   q?: string;
   limit?: number;
   offset?: number;
+  /** Admin tenancy filter: PERSONAL | EMPRESA. */
+  mode?: string | null;
 }
 
 export type DocumentOrderBy = "proposed_name" | "company_folder";
@@ -207,6 +209,8 @@ export interface AnalyzeJobRequest {
   dry_run?: boolean;
   require_review?: boolean;
   run_assign?: boolean;
+  /** Admin tenancy filter: PERSONAL | EMPRESA. Omit for all / non-admin. */
+  mode?: string | null;
 }
 
 export interface JobProgress {
@@ -366,6 +370,8 @@ export interface EmailAnalyzeRequest {
   limit?: number | null;
   force?: boolean;
   dry_run?: boolean;
+  /** Admin tenancy filter: PERSONAL | EMPRESA. */
+  mode?: string | null;
 }
 
 export interface FolderItem {
@@ -392,6 +398,8 @@ export interface PictureOut {
   /** @deprecated Prefer `folder` (backend field name). */
   company_folder?: string | null;
   date: string | null;
+  /** Tenancy mode EMPRESA | PERSONAL. */
+  mode?: string | null;
   original_name: string | null;
   proposed_name: string | null;
   status: string | null;
@@ -406,6 +414,11 @@ export interface PictureOut {
 export type VideoOut = PictureOut & {
   duration_sec: string | null;
   keyframe_count: string | null;
+  /** Storage path of lazy H.264 playback derivative, when ready. */
+  playback_relative_path?: string | null;
+  /** none | processing | ready | error */
+  playback_status?: string | null;
+  playback_error?: string | null;
 };
 
 export interface PictureListResponse {
@@ -507,6 +520,7 @@ export interface MediaUploadOut {
   status: string;
   id: number;
   media_kind: MediaKind;
+  mode?: string | null;
 }
 
 export interface MediaBatchUploadOut {
@@ -519,6 +533,8 @@ export interface MediaAnalyzeJobRequest {
   dry_run?: boolean;
   picture_ids?: number[];
   video_ids?: number[];
+  /** Admin tenancy filter: PERSONAL | EMPRESA. */
+  mode?: string | null;
 }
 
 export interface MediaAnalyzeResultFile {
@@ -589,4 +605,150 @@ export interface NoteUpdate {
 export interface NoteListResponse {
   items: NoteOut[];
   total: number;
+}
+
+// --- Admin ops (logs / services / jobs) ---
+
+export type LogSourceKind = "container" | "file" | "job";
+
+export interface LogSource {
+  id: string;
+  label: string;
+  kind: LogSourceKind;
+  container_name?: string | null;
+}
+
+export interface LogSourcesResponse {
+  sources: LogSource[];
+}
+
+export interface LogLine {
+  ts: string;
+  level?: string | null;
+  message: string;
+  source: string;
+  job_id?: string | null;
+  container?: string | null;
+}
+
+export interface LogPage {
+  lines: LogLine[];
+  next_cursor?: string | null;
+  truncated: boolean;
+}
+
+export interface LogQueryParams {
+  source: string;
+  since?: string;
+  since_seconds?: number;
+  level?: string;
+  q?: string;
+  job_id?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export type ServiceStatus =
+  | "running"
+  | "exited"
+  | "restarting"
+  | "paused"
+  | "created"
+  | "dead"
+  | "unknown";
+
+export type ServiceHealth =
+  | "healthy"
+  | "unhealthy"
+  | "starting"
+  | "none"
+  | "unknown";
+
+export interface ServiceMount {
+  source: string;
+  destination: string;
+  mode?: string;
+}
+
+export interface AdminService {
+  id: string;
+  name: string;
+  container_name: string;
+  image: string;
+  status: ServiceStatus;
+  health: ServiceHealth;
+  started_at?: string | null;
+  uptime_seconds?: number | null;
+  restart_count?: number | null;
+  ports?: string[];
+  mounts?: ServiceMount[];
+  labels?: Record<string, string>;
+}
+
+export interface AdminServicesResponse {
+  services: AdminService[];
+  stack?: string | null;
+  generated_at: string;
+}
+
+export interface ServiceActionRequest {
+  reason?: string;
+}
+
+export interface ServiceActionResult {
+  service_id: string;
+  action: "restart";
+  accepted: boolean;
+  message: string;
+  audit_id?: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  ts: string;
+  actor: string;
+  action: string;
+  target: string;
+  success: boolean;
+  detail?: string | null;
+}
+
+export interface AuditListResponse {
+  items: AuditEvent[];
+  next_cursor?: string | null;
+}
+
+export interface AdminJobSummary {
+  id: string;
+  type: string;
+  status: JobStatus;
+  started_at?: string | null;
+  finished_at?: string | null;
+  progress?: {
+    processed: number;
+    total: number;
+    message?: string | null;
+  } | null;
+  error?: string | null;
+  worker_service_id?: string | null;
+}
+
+export interface AdminJobsResponse {
+  items: AdminJobSummary[];
+  next_cursor?: string | null;
+}
+
+export interface AdminConfigStatus {
+  input_folder: string;
+  output_folder: string;
+  input_folder_exists: boolean;
+  output_folder_exists: boolean;
+  input_folder_writable: boolean;
+  output_folder_writable: boolean;
+  gemini_configured: boolean;
+  gemini_backup_configured: boolean;
+  gemini_model: string;
+  env_flags?: { key: string; set: boolean }[];
+  app_version?: string | null;
+  git_sha?: string | null;
 }

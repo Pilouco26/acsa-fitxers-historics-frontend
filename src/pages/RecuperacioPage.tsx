@@ -9,6 +9,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { PdfPreview, releaseDocumentPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
+import { useAuth } from "@/contexts/AuthContext";
 import { DOCUMENT_LIST_PAGE_SIZE } from "@/constants/globals";
 import {
   applyListPanelFit,
@@ -32,6 +33,7 @@ function formatDeletedAt(value: string | null | undefined): string {
 
 export function RecuperacioPage() {
   const queryClient = useQueryClient();
+  const { apiMode } = useAuth();
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
@@ -48,17 +50,25 @@ export function RecuperacioPage() {
 
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, apiMode]);
 
   const detailVisible = Boolean(selected && detailOpen);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ["documents", "deleted", debouncedSearch, page, pageSize],
+    queryKey: [
+      "documents",
+      "deleted",
+      debouncedSearch,
+      page,
+      pageSize,
+      apiMode ?? "ALL",
+    ],
     queryFn: () =>
       listDeletedDocuments({
         q: debouncedSearch || undefined,
         limit: pageSize,
         offset: page * pageSize,
+        ...(apiMode ? { mode: apiMode } : {}),
       }),
     placeholderData: keepPreviousData,
   });
@@ -71,14 +81,22 @@ export function RecuperacioPage() {
     page,
     pageSize,
     total,
-    scopeKey: debouncedSearch,
+    scopeKey: `${debouncedSearch}:${apiMode ?? "ALL"}`,
     getPageOptions: (targetPage) => ({
-      queryKey: ["documents", "deleted", debouncedSearch, targetPage, pageSize],
+      queryKey: [
+        "documents",
+        "deleted",
+        debouncedSearch,
+        targetPage,
+        pageSize,
+        apiMode ?? "ALL",
+      ],
       queryFn: () =>
         listDeletedDocuments({
           q: debouncedSearch || undefined,
           limit: pageSize,
           offset: targetPage * pageSize,
+          ...(apiMode ? { mode: apiMode } : {}),
         }),
     }),
   });

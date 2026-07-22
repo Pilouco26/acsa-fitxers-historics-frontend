@@ -24,6 +24,7 @@ import {
   FOLDER_ROOT_MEDIA,
 } from "@/constants/folders";
 import { DOCUMENT_STATUS_REVISIO } from "@/constants/globals";
+import { useAuth } from "@/contexts/AuthContext";
 import type { MediaKind, PictureOut, VideoOut } from "@/api/types";
 import { buildArchiveFolderSuggestions } from "@/utils/folderSuggestions";
 
@@ -60,6 +61,7 @@ function foldersMatch(a: string, b: string): boolean {
 
 export function MediaReviewPanel() {
   const queryClient = useQueryClient();
+  const { apiMode, isAdmin } = useAuth();
   const [selected, setSelected] = useState<SelectedMedia | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -83,14 +85,22 @@ export function MediaReviewPanel() {
   });
 
   const archiveFoldersQuery = useQuery({
-    queryKey: ["folders", FOLDER_ROOT_ARCHIVE],
-    queryFn: () => listFolders({ root: FOLDER_ROOT_ARCHIVE }),
+    queryKey: ["folders", FOLDER_ROOT_ARCHIVE, apiMode ?? "ALL"],
+    queryFn: () =>
+      listFolders({
+        root: FOLDER_ROOT_ARCHIVE,
+        ...(apiMode ? { mode: apiMode } : {}),
+      }),
     staleTime: 5 * 60 * 1000,
   });
 
   const mediaFoldersQuery = useQuery({
-    queryKey: ["folders", FOLDER_ROOT_MEDIA],
-    queryFn: () => listFolders({ root: FOLDER_ROOT_MEDIA }),
+    queryKey: ["folders", FOLDER_ROOT_MEDIA, apiMode ?? "ALL"],
+    queryFn: () =>
+      listFolders({
+        root: FOLDER_ROOT_MEDIA,
+        ...(apiMode ? { mode: apiMode } : {}),
+      }),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -239,10 +249,19 @@ export function MediaReviewPanel() {
 
   const retryMutation = useMutation({
     mutationFn: (sel: SelectedMedia) => {
+      if (isAdmin && !apiMode) {
+        return Promise.reject(
+          new ApiError(
+            400,
+            "Trieu Personal o Empresa al selector de mode abans d'analitzar.",
+          ),
+        );
+      }
       return startMediaAnalyzeJob({
         source: "media",
         require_review: true,
         dry_run: false,
+        ...(apiMode ? { mode: apiMode } : {}),
         ...(sel.kind === "video"
           ? { video_ids: [sel.item.id] }
           : { picture_ids: [sel.item.id] }),
@@ -609,6 +628,7 @@ export function MediaReviewPanel() {
               <MediaPreview
                 kind={selectedKind}
                 id={selectedItem.id}
+                filePath={selectedItem.relative_path}
                 title={displayName(selectedItem)}
               />
             </div>

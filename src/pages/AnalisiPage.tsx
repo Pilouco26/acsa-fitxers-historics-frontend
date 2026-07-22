@@ -8,10 +8,12 @@ import {
 } from "@/api/client";
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { PageHeader } from "@/components/PageHeader";
+import { useAuth } from "@/contexts/AuthContext";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import type { JobOut } from "@/api/types";
 
 export function AnalisiPage() {
+  const { apiMode } = useAuth();
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobOut | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,8 +35,12 @@ export function AnalisiPage() {
   useJobPolling(jobId, 2000, setJob);
 
   const { data: folders } = useQuery({
-    queryKey: ["folders", "archive"],
-    queryFn: () => listFolders({ root: "archive" }),
+    queryKey: ["folders", "archive", apiMode ?? "ALL"],
+    queryFn: () =>
+      listFolders({
+        root: "archive",
+        ...(apiMode ? { mode: apiMode } : {}),
+      }),
   });
 
   const analyzeMutation = useMutation({
@@ -53,6 +59,7 @@ export function AnalisiPage() {
         dry_run: dryRun,
         require_review: requireReview,
         run_assign: runAssign,
+        ...(apiMode ? { mode: apiMode } : {}),
       }),
     onSuccess: (data) => {
       setJobId(data.job_id);

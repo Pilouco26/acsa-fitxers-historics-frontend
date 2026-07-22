@@ -9,6 +9,7 @@ import {
 } from "@/api/client";
 import { MediaPreview } from "@/components/MediaPreview";
 import { PageHeader } from "@/components/PageHeader";
+import { useAuth } from "@/contexts/AuthContext";
 import type { MediaUploadOut, UploadOut } from "@/api/types";
 
 type ContentKind = "documents" | "media";
@@ -128,6 +129,7 @@ function clearFileInputs(
 }
 
 export function UploadPage() {
+  const { apiMode, isAdmin } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [contentKind, setContentKind] = useState<ContentKind>("documents");
@@ -141,8 +143,11 @@ export function UploadPage() {
     clearFileInputs(fileInputRef.current, folderInputRef.current);
   }, []);
 
+  const needsMode = isAdmin && !apiMode;
+
   const docMutation = useMutation({
-    mutationFn: (files: File[]) => uploadBatch(files),
+    mutationFn: (files: File[]) =>
+      uploadBatch(files, apiMode ? { mode: apiMode } : undefined),
     onSuccess: (data) => {
       setUploadedDocs((prev) => [...data.files, ...prev]);
       setError(null);
@@ -154,7 +159,8 @@ export function UploadPage() {
   });
 
   const mediaMutation = useMutation({
-    mutationFn: (files: File[]) => uploadMediaBatch(files),
+    mutationFn: (files: File[]) =>
+      uploadMediaBatch(files, apiMode ? { mode: apiMode } : undefined),
     onSuccess: (data) => {
       setUploadedMedia((prev) => [...data.files, ...prev]);
       setError(null);
@@ -194,6 +200,14 @@ export function UploadPage() {
   const handleFiles = useCallback(
     (fileList: FileList | File[] | null) => {
       if (!fileList) return;
+
+      if (needsMode) {
+        setError(
+          "Trieu Personal o Empresa al selector de mode abans de pujar fitxers.",
+        );
+        clearInputs();
+        return;
+      }
 
       const files = Array.from(fileList);
       if (!files.length) return;
@@ -241,7 +255,7 @@ export function UploadPage() {
 
       mediaMutation.mutate(media);
     },
-    [clearInputs, contentKind, docMutation, mediaMutation],
+    [clearInputs, contentKind, docMutation, mediaMutation, needsMode],
   );
 
   async function handleDrop(data: DataTransfer) {
@@ -273,6 +287,13 @@ export function UploadPage() {
         title="Pujar"
         description="Trieu si pugeu documents PDF o fotos i vídeos — fitxers solts o una carpeta sencera."
       />
+
+      {needsMode && (
+        <div className="alert alert-info">
+          Esteu en mode «Tots». Trieu Personal o Empresa al menú lateral per
+          pujar fitxers a l&apos;àmbit correcte.
+        </div>
+      )}
 
       <div className="field" style={{ marginBottom: "1rem" }}>
         <label>Tipus de contingut</label>

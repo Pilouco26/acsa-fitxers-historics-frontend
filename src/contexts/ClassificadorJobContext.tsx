@@ -20,9 +20,13 @@ import {
   UNAUTHORIZED_MESSAGE,
   isUnauthorizedError,
 } from "@/api/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import type { JobOut, MediaAnalyzeResultFile, MediaKind } from "@/api/types";
-import { DOCUMENT_STATUS_REVISIO } from "@/constants/globals";
+import {
+  DOCUMENT_STATUS_PENDING,
+  DOCUMENT_STATUS_REVISIO,
+} from "@/constants/globals";
 
 export type ClassificadorContentKind = "documents" | "media";
 
@@ -37,7 +41,9 @@ interface ClassificadorJobContextValue {
   busy: boolean;
   isActive: boolean;
   contentKind: ClassificadorContentKind | null;
-  startAnalyze: (kind: ClassificadorContentKind) => void;
+  /** Kinds finished in the current run (for success copy). */
+  completedKinds: ClassificadorContentKind[];
+  startAnalyze: () => void;
   cancel: () => void;
 }
 
@@ -53,6 +59,33 @@ function mediaAnalyzeFiles(
       (file.kind === "picture" || file.kind === "video")
     );
   });
+}
+
+function jobHadWork(job: JobOut | null): boolean {
+  if (!job) return false;
+
+  const progress = job.progress;
+  if (progress) {
+    if (typeof progress.total === "number") return progress.total > 0;
+    if (typeof progress.processed === "number") return progress.processed > 0;
+    const counts = progress.status_counts;
+    if (counts && Object.keys(counts).length > 0) {
+      return Object.values(counts).some((value) => value > 0);
+    }
+  }
+
+  const files = mediaAnalyzeFiles(job.result);
+  if (files.length > 0) return true;
+
+  const summary = job.result?.summary;
+  if (summary && typeof summary === "object") {
+    const s = summary as { total?: unknown; processed?: unknown };
+    if (typeof s.total === "number") return s.total > 0;
+    if (typeof s.processed === "number") return s.processed > 0;
+  }
+
+  // No empty signal — assume work so assign/route still runs for real jobs.
+  return true;
 }
 
 async function listRevisioMediaForRouting(): Promise<
@@ -74,20 +107,38 @@ async function listRevisioMediaForRouting(): Promise<
   ];
 }
 
+async function hasPendingMedia(): Promise<boolean> {
+  const [pictures, videos] = await Promise.all([
+    listPictures({ status: DOCUMENT_STATUS_PENDING, limit: 1 }),
+    listVideos({ status: DOCUMENT_STATUS_PENDING, limit: 1 }),
+  ]);
+  return (pictures.total ?? 0) + (videos.total ?? 0) > 0;
+}
+
 const ClassificadorJobContext =
   createContext<ClassificadorJobContextValue | null>(null);
 
 export function ClassificadorJobProvider({ children }: { children: ReactNode }) {
+  const { apiMode, isAdmin } = useAuth();
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isRouting, setIsRouting] = useState(false);
+  const [isProbing, setIsProbing] = useState(false);
   const [contentKind, setContentKind] =
     useState<ClassificadorContentKind | null>(null);
+  const [completedKinds, setCompletedKinds] = useState<
+    ClassificadorContentKind[]
+  >([]);
   const assignedForJobRef = useRef<string | null>(null);
   const routedForJobRef = useRef<string | null>(null);
+  const advancedForJobRef = useRef<string | null>(null);
+  const queueRef = useRef<ClassificadorContentKind[]>([]);
+  const completedKindsRef = useRef<ClassificadorContentKind[]>([]);
+  const analyzeDocumentsRef = useRef<() => void>(() => {});
+  const analyzeMediaRef = useRef<() => void>(() => {});
 
   const stopForUnauthorized = useCallback(() => {
     setAuthError(true);
@@ -96,6 +147,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     setJob(null);
     setIsAssigning(false);
     setIsRouting(false);
+    queueRef.current = [];
   }, []);
 
   const handlePollingError = useCallback(
@@ -116,6 +168,12 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     if (contentKind !== "documents") return;
     if (assignedForJobRef.current === jobId) return;
     assignedForJobRef.current = jobId;
+
+    // Empty inbox scan: skip assign and let the advance effect continue / report none.
+    if (!jobHadWork(job)) {
+      setIsAssigning(false);
+      return;
+    }
 
     let cancelled = false;
     setIsAssigning(true);
@@ -139,6 +197,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
           setError(
             err instanceof ApiError ? err.message : "Error en l'assignació",
           );
+          queueRef.current = [];
         }
       })
       .finally(() => {
@@ -148,13 +207,18 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [jobId, job?.status, contentKind, stopForUnauthorized]);
+  }, [jobId, job, job?.status, contentKind, stopForUnauthorized]);
 
   useEffect(() => {
     if (!jobId || job?.status !== "completed") return;
     if (contentKind !== "media") return;
     if (routedForJobRef.current === jobId) return;
     routedForJobRef.current = jobId;
+
+    if (!jobHadWork(job)) {
+      setIsRouting(false);
+      return;
+    }
 
     let cancelled = false;
     setIsRouting(true);
@@ -187,6 +251,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
                 ? err.message
                 : "Error en calcular la carpeta de destinació",
             );
+            queueRef.current = [];
           } else {
             setError(null);
           }
@@ -202,6 +267,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
               ? err.message
               : "Error en calcular la carpeta de destinació",
           );
+          queueRef.current = [];
         }
       } finally {
         if (!cancelled) setIsRouting(false);
@@ -211,20 +277,37 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [jobId, job?.status, job?.result, contentKind, stopForUnauthorized]);
+  }, [jobId, job, job?.status, job?.result, contentKind, stopForUnauthorized]);
+
+  useEffect(() => {
+    if (job?.status === "failed" || job?.status === "cancelled") {
+      queueRef.current = [];
+    }
+  }, [job?.status]);
 
   const analyzeDocumentsMutation = useMutation({
-    mutationFn: () =>
-      startAnalyzeJob({
+    mutationFn: () => {
+      if (isAdmin && !apiMode) {
+        return Promise.reject(
+          new ApiError(
+            400,
+            "Trieu Personal o Empresa al selector de mode abans d'analitzar.",
+          ),
+        );
+      }
+      return startAnalyzeJob({
         source: "inbox",
         require_review: true,
         run_assign: false,
         force: false,
         dry_run: false,
-      }),
+        ...(apiMode ? { mode: apiMode } : {}),
+      });
+    },
     onSuccess: (data) => {
       assignedForJobRef.current = null;
       routedForJobRef.current = null;
+      advancedForJobRef.current = null;
       setIsAssigning(false);
       setIsRouting(false);
       setContentKind("documents");
@@ -234,6 +317,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
       setError(null);
     },
     onError: (err) => {
+      queueRef.current = [];
       if (isUnauthorizedError(err)) {
         setAuthError(true);
         setError(UNAUTHORIZED_MESSAGE);
@@ -247,15 +331,26 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
   });
 
   const analyzeMediaMutation = useMutation({
-    mutationFn: () =>
-      startMediaAnalyzeJob({
+    mutationFn: () => {
+      if (isAdmin && !apiMode) {
+        return Promise.reject(
+          new ApiError(
+            400,
+            "Trieu Personal o Empresa al selector de mode abans d'analitzar.",
+          ),
+        );
+      }
+      return startMediaAnalyzeJob({
         source: "media",
         require_review: true,
         dry_run: false,
-      }),
+        ...(apiMode ? { mode: apiMode } : {}),
+      });
+    },
     onSuccess: (data) => {
       assignedForJobRef.current = null;
       routedForJobRef.current = null;
+      advancedForJobRef.current = null;
       setIsAssigning(false);
       setIsRouting(false);
       setContentKind("media");
@@ -265,6 +360,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
       setError(null);
     },
     onError: (err) => {
+      queueRef.current = [];
       if (isUnauthorizedError(err)) {
         setAuthError(true);
         setError(UNAUTHORIZED_MESSAGE);
@@ -284,8 +380,62 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     },
   });
 
+  analyzeDocumentsRef.current = () => analyzeDocumentsMutation.mutate();
+  analyzeMediaRef.current = () => analyzeMediaMutation.mutate();
+
+  const startKind = useCallback((kind: ClassificadorContentKind) => {
+    if (kind === "media") {
+      analyzeMediaRef.current();
+    } else {
+      analyzeDocumentsRef.current();
+    }
+  }, []);
+
+  // After a kind finishes (job + assign/route), record work and start the next queued kind.
+  useEffect(() => {
+    if (!jobId || job?.status !== "completed") return;
+    if (contentKind == null) return;
+    if (isAssigning || isRouting) return;
+
+    if (contentKind === "documents") {
+      if (assignedForJobRef.current !== jobId) return;
+    } else if (routedForJobRef.current !== jobId) {
+      return;
+    }
+
+    if (advancedForJobRef.current === jobId) return;
+    advancedForJobRef.current = jobId;
+
+    const hadWork = jobHadWork(job);
+    if (hadWork && !completedKindsRef.current.includes(contentKind)) {
+      completedKindsRef.current = [...completedKindsRef.current, contentKind];
+      setCompletedKinds(completedKindsRef.current);
+    }
+
+    const next = queueRef.current[0];
+    if (next) {
+      queueRef.current = queueRef.current.slice(1);
+      startKind(next);
+      return;
+    }
+
+    if (completedKindsRef.current.length === 0) {
+      setError("No hi ha documents ni mitjans nous per processar.");
+    }
+  }, [
+    jobId,
+    job,
+    job?.status,
+    contentKind,
+    isAssigning,
+    isRouting,
+    startKind,
+  ]);
+
   const isStarting =
-    analyzeDocumentsMutation.isPending || analyzeMediaMutation.isPending;
+    isProbing ||
+    analyzeDocumentsMutation.isPending ||
+    analyzeMediaMutation.isPending;
   const busy =
     isStarting ||
     isAssigning ||
@@ -294,18 +444,61 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
     job?.status === "running";
   const isActive = busy;
 
-  const startAnalyze = useCallback(
-    (kind: ClassificadorContentKind) => {
-      if (kind === "media") {
-        analyzeMediaMutation.mutate();
-      } else {
-        analyzeDocumentsMutation.mutate();
-      }
-    },
-    [analyzeDocumentsMutation, analyzeMediaMutation],
-  );
+  const startAnalyze = useCallback(() => {
+    if (
+      isProbing ||
+      analyzeDocumentsMutation.isPending ||
+      analyzeMediaMutation.isPending ||
+      isAssigning ||
+      isRouting ||
+      job?.status === "pending" ||
+      job?.status === "running"
+    ) {
+      return;
+    }
+
+    setIsProbing(true);
+    setAuthError(false);
+    setError(null);
+    completedKindsRef.current = [];
+    setCompletedKinds([]);
+    queueRef.current = [];
+
+    hasPendingMedia()
+      .then((mediaPending) => {
+        // PDFs live on disk until analyze, so documents are always scanned.
+        // Media rows exist after upload — only queue them when pending ones exist.
+        queueRef.current = mediaPending ? ["media"] : [];
+        startKind("documents");
+      })
+      .catch((err) => {
+        if (isUnauthorizedError(err)) {
+          setAuthError(true);
+          setError(UNAUTHORIZED_MESSAGE);
+          return;
+        }
+        setAuthError(false);
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : "Error en comprovar la safata d'entrada",
+        );
+      })
+      .finally(() => {
+        setIsProbing(false);
+      });
+  }, [
+    isProbing,
+    analyzeDocumentsMutation.isPending,
+    analyzeMediaMutation.isPending,
+    isAssigning,
+    isRouting,
+    job?.status,
+    startKind,
+  ]);
 
   const cancel = useCallback(() => {
+    queueRef.current = [];
     if (jobId) {
       cancelJob(jobId).then(setJob).catch(() => {});
     }
@@ -324,6 +517,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
         busy,
         isActive,
         contentKind,
+        completedKinds,
         startAnalyze,
         cancel,
       }}

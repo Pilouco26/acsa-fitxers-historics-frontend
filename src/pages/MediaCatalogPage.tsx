@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MediaCatalogPanel } from "@/components/MediaCatalogPanel";
-import { HubBackButton } from "@/components/HubBackButton";
 import { PageHeader } from "@/components/PageHeader";
 import { documentsFolderPickPath } from "@/constants/folders";
 import type { MediaKind } from "@/api/types";
@@ -38,7 +37,8 @@ export function MediaCatalogPage() {
         title: "Fotos",
         description: (
           <>
-            Fotos aprovades.
+            Fotos aprovades. Cliqueu una foto per previsualitzar-la i editar-ne
+            el nom, la carpeta o el resum.
             {folderLabel}
           </>
         ),
@@ -49,7 +49,8 @@ export function MediaCatalogPage() {
         title: "Vídeos",
         description: (
           <>
-            Vídeos aprovats.
+            Vídeos aprovats. Cliqueu un vídeo per previsualitzar-lo i editar-ne
+            el nom, la carpeta o el resum.
             {folderLabel}
           </>
         ),
@@ -59,7 +60,8 @@ export function MediaCatalogPage() {
       title: "Catàleg de mitjans",
       description: (
         <>
-          Fotos i vídeos aprovats. Cerqueu i obriu a pantalla completa.
+          Fotos i vídeos aprovats. Cliqueu un fitxer per previsualitzar-lo i
+          editar-ne les dades.
           {folderLabel}
         </>
       ),
@@ -69,15 +71,14 @@ export function MediaCatalogPage() {
   return (
     <div className="page-fill">
       <PageHeader title={title} description={description} />
-      <div className="panel-with-back">
-        <HubBackButton
-          onClick={() => navigate(backTarget)}
-          label="Tornar a Classificats"
-        />
-        <div className="panel-with-back-body">
-          <MediaCatalogPanel kind={kind} folder={folder} />
-        </div>
-      </div>
+      <MediaCatalogPanel
+        kind={kind}
+        folder={folder}
+        onBackToHub={() =>
+          navigate(backTarget, { state: { skipAutoPick: true } })
+        }
+        hubBackLabel="Tornar a Classificats"
+      />
     </div>
   );
 }

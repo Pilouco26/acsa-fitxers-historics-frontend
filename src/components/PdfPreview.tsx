@@ -4,8 +4,12 @@ import { buildHeaders, documentFileUrl, storedFileUrl, throwIfNotOk } from "@/ap
 import { openPdfDocument, renderPdfPageOntoCanvas, isPdfRenderCancelled } from "@/utils/pdfDocument";
 
 const ZOOM_MIN = 0.1;
-const ZOOM_MAX = 3;
-const ZOOM_STEP = 0.25;
+const ZOOM_MAX = 6;
+/** Multiplicative step so zoom feels even at small fit scales (phones). */
+const ZOOM_FACTOR = 1.25;
+/** Min/max as a ratio of the current fit-to-frame zoom. */
+const ZOOM_FIT_RATIO_MIN = 0.5;
+const ZOOM_FIT_RATIO_MAX = 8;
 const FIT_PADDING_PX = 8;
 
 const activeReleases = new Map<string, () => void>();
@@ -20,12 +24,22 @@ function previewKey(documentId?: number | null, filePath?: string | null): strin
   return "empty";
 }
 
-function clampZoom(value: number): number {
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100));
+function clampZoom(value: number, fitZoom = 1): number {
+  const lo = Math.max(ZOOM_MIN, fitZoom * ZOOM_FIT_RATIO_MIN);
+  const hi = Math.min(ZOOM_MAX, Math.max(lo, fitZoom * ZOOM_FIT_RATIO_MAX));
+  return Math.min(hi, Math.max(lo, Math.round(value * 1000) / 1000));
 }
 
 function normalizeRotation(rotation: number): number {
   return ((rotation % 360) + 360) % 360;
+}
+
+function touchDistance(a: Touch, b: Touch): number {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
+function touchMidpoint(a: Touch, b: Touch): { x: number; y: number } {
+  return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
 }
 
 async function measureFitZoom(
@@ -39,7 +53,8 @@ async function measureFitZoom(
   const availW = Math.max(1, frame.clientWidth - FIT_PADDING_PX);
   const availH = Math.max(1, frame.clientHeight - FIT_PADDING_PX);
   if (viewport.width <= 0 || viewport.height <= 0) return 1;
-  return clampZoom(Math.min(availW / viewport.width, availH / viewport.height));
+  const raw = Math.min(availW / viewport.width, availH / viewport.height);
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(raw * 1000) / 1000));
 }
 
 /** Force-close any in-flight preview fetch / render for a document id. */
@@ -73,6 +88,7 @@ type PdfCanvasViewerProps = {
 /**
  * Touch-friendly single-page PDF canvas viewer with zoom / page controls.
  * Defaults to fitting the whole page in the preview frame.
+ * Zoom: toolbar, Ctrl/Cmd+wheel, and pinch on touch screens.
  */
 export function PdfCanvasViewer({
   data,
@@ -88,6 +104,23 @@ export function PdfCanvasViewer({
   const fitGenRef = useRef(0);
   const stickToFitRef = useRef(true);
   const fitZoomRef = useRef(1);
+  const zoomRef = useRef(1);
+  const zoomAnchorRef = useRef<{
+    previousZoom: number;
+    nextZoom: number;
+    localX: number;
+    localY: number;
+    contentX: number;
+    contentY: number;
+  } | null>(null);
+  const pinchRef = useRef<{
+    startDist: number;
+    startZoom: number;
+    liveScale: number;
+    midX: number;
+    midY: number;
+  } | null>(null);
+  const pinchRafRef = useRef<number | null>(null);
 
   const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -98,8 +131,61 @@ export function PdfCanvasViewer({
   const [error, setError] = useState<string | null>(null);
 
   const rotationDeg = useMemo(() => normalizeRotation(rotation), [rotation]);
-  const busy = externalLoading || opening || rendering;
+  const loadingDoc = externalLoading || opening;
+  const busy = loadingDoc || rendering;
   const displayError = externalError ?? error;
+  const zoomPercent = Math.round((zoom / Math.max(fitZoom, 0.001)) * 100);
+  const atFit = Math.abs(zoom - fitZoom) < 0.005;
+  const minZoom = clampZoom(fitZoom * ZOOM_FIT_RATIO_MIN, fitZoom);
+  const maxZoom = clampZoom(fitZoom * ZOOM_FIT_RATIO_MAX, fitZoom);
+
+  const applyZoom = (
+    nextZoom: number,
+    clientX?: number,
+    clientY?: number,
+  ) => {
+    const frame = frameRef.current;
+    const clamped = clampZoom(nextZoom, fitZoomRef.current);
+    const previous = zoomRef.current;
+    if (Math.abs(clamped - previous) < 0.001) return;
+
+    stickToFitRef.current = Math.abs(clamped - fitZoomRef.current) < 0.005;
+
+    if (frame) {
+      const rect = frame.getBoundingClientRect();
+      const localX =
+        clientX != null && clientX >= rect.left && clientX <= rect.right
+          ? clientX - rect.left
+          : rect.width / 2;
+      const localY =
+        clientY != null && clientY >= rect.top && clientY <= rect.bottom
+          ? clientY - rect.top
+          : rect.height / 2;
+      zoomAnchorRef.current = {
+        previousZoom: previous,
+        nextZoom: clamped,
+        localX,
+        localY,
+        contentX: (frame.scrollLeft + localX) / Math.max(previous, 0.001),
+        contentY: (frame.scrollTop + localY) / Math.max(previous, 0.001),
+      };
+    }
+
+    zoomRef.current = clamped;
+    setZoom(clamped);
+  };
+
+  const bumpZoom = (direction: 1 | -1) => {
+    const factor = direction > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+    applyZoom(zoomRef.current * factor);
+  };
+
+  const resetToFit = () => {
+    stickToFitRef.current = true;
+    zoomAnchorRef.current = null;
+    zoomRef.current = fitZoomRef.current;
+    setZoom(fitZoomRef.current);
+  };
 
   useEffect(() => {
     let active = true;
@@ -109,8 +195,11 @@ export function PdfCanvasViewer({
     setPageCount(0);
     setZoom(1);
     setFitZoom(1);
+    zoomRef.current = 1;
     fitZoomRef.current = 1;
     stickToFitRef.current = true;
+    zoomAnchorRef.current = null;
+    pinchRef.current = null;
     setError(null);
 
     const previous = pdfRef.current;
@@ -174,6 +263,7 @@ export function PdfCanvasViewer({
           setFitZoom(nextFit);
         }
         if (stickToFitRef.current) {
+          zoomRef.current = nextFit;
           setZoom((z) => (Math.abs(z - nextFit) < 0.01 ? z : nextFit));
         }
       });
@@ -195,6 +285,7 @@ export function PdfCanvasViewer({
   useLayoutEffect(() => {
     const pdf = pdfRef.current;
     const canvas = canvasRef.current;
+    const frame = frameRef.current;
     if (!pdf || !canvas || pageCount < 1) return;
 
     const gen = ++renderGenRef.current;
@@ -204,6 +295,7 @@ export function PdfCanvasViewer({
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const scale = zoom * dpr;
+    const anchor = zoomAnchorRef.current;
 
     void renderPdfPageOntoCanvas(pdf, page, canvas, {
       scale,
@@ -214,6 +306,19 @@ export function PdfCanvasViewer({
         if (gen !== renderGenRef.current) return;
         canvas.style.width = `${Math.ceil(canvas.width / dpr)}px`;
         canvas.style.height = `${Math.ceil(canvas.height / dpr)}px`;
+
+        if (frame && anchor && Math.abs(anchor.nextZoom - zoom) < 0.001) {
+          frame.scrollLeft = Math.max(
+            0,
+            anchor.contentX * zoom - anchor.localX,
+          );
+          frame.scrollTop = Math.max(
+            0,
+            anchor.contentY * zoom - anchor.localY,
+          );
+          zoomAnchorRef.current = null;
+        }
+
         setRendering(false);
       })
       .catch((err) => {
@@ -228,22 +333,120 @@ export function PdfCanvasViewer({
     };
   }, [page, pageCount, zoom, rotationDeg, data]);
 
-  const bumpZoom = (delta: number) => {
-    stickToFitRef.current = false;
-    setZoom((z) => clampZoom(z + delta));
-  };
+  // Ctrl/Cmd + wheel zoom (desktop / trackpad pinch often emits this).
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || pageCount < 1) return;
 
-  const resetToFit = () => {
-    stickToFitRef.current = true;
-    setZoom(fitZoomRef.current);
-  };
+    let wheelRaf: number | null = null;
+    let pending: { factor: number; x: number; y: number } | null = null;
+
+    const flush = () => {
+      wheelRaf = null;
+      if (!pending) return;
+      const { factor, x, y } = pending;
+      pending = null;
+      applyZoom(zoomRef.current * factor, x, y);
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 1 / ZOOM_FACTOR : ZOOM_FACTOR;
+      pending = {
+        factor: (pending?.factor ?? 1) * factor,
+        x: e.clientX,
+        y: e.clientY,
+      };
+      if (wheelRaf == null) wheelRaf = requestAnimationFrame(flush);
+    };
+
+    frame.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      if (wheelRaf != null) cancelAnimationFrame(wheelRaf);
+      frame.removeEventListener("wheel", onWheel);
+    };
+  }, [pageCount]);
+
+  // Pinch-to-zoom: live CSS scale while pinching, commit pdf.js zoom on release.
+  useEffect(() => {
+    const frame = frameRef.current;
+    const canvas = canvasRef.current;
+    if (!frame || !canvas || pageCount < 1) return;
+
+    const clearPinchVisual = () => {
+      canvas.style.transform = "";
+      canvas.style.transformOrigin = "";
+      frame.removeAttribute("data-pinching");
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) {
+        pinchRef.current = null;
+        return;
+      }
+      frame.setAttribute("data-pinching", "true");
+      pinchRef.current = {
+        startDist: touchDistance(e.touches[0], e.touches[1]),
+        startZoom: zoomRef.current,
+        liveScale: 1,
+        midX: 0,
+        midY: 0,
+      };
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const pinch = pinchRef.current;
+      if (!pinch || e.touches.length !== 2 || pinch.startDist <= 0) return;
+      e.preventDefault();
+      const dist = touchDistance(e.touches[0], e.touches[1]);
+      const mid = touchMidpoint(e.touches[0], e.touches[1]);
+      const rect = frame.getBoundingClientRect();
+      const liveScale = dist / pinch.startDist;
+      pinch.liveScale = liveScale;
+      pinch.midX = mid.x;
+      pinch.midY = mid.y;
+
+      if (pinchRafRef.current != null) cancelAnimationFrame(pinchRafRef.current);
+      pinchRafRef.current = requestAnimationFrame(() => {
+        canvas.style.transformOrigin = `${mid.x - rect.left + frame.scrollLeft}px ${mid.y - rect.top + frame.scrollTop}px`;
+        canvas.style.transform = `scale(${liveScale})`;
+      });
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length >= 2) return;
+      const pinch = pinchRef.current;
+      pinchRef.current = null;
+      if (pinchRafRef.current != null) {
+        cancelAnimationFrame(pinchRafRef.current);
+        pinchRafRef.current = null;
+      }
+      clearPinchVisual();
+      if (!pinch || Math.abs(pinch.liveScale - 1) < 0.02) return;
+      applyZoom(pinch.startZoom * pinch.liveScale, pinch.midX, pinch.midY);
+    };
+
+    frame.addEventListener("touchstart", onTouchStart, { passive: true });
+    frame.addEventListener("touchmove", onTouchMove, { passive: false });
+    frame.addEventListener("touchend", onTouchEnd, { passive: true });
+    frame.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+    return () => {
+      if (pinchRafRef.current != null) cancelAnimationFrame(pinchRafRef.current);
+      frame.removeEventListener("touchstart", onTouchStart);
+      frame.removeEventListener("touchmove", onTouchMove);
+      frame.removeEventListener("touchend", onTouchEnd);
+      frame.removeEventListener("touchcancel", onTouchEnd);
+      clearPinchVisual();
+    };
+  }, [pageCount]);
 
   if (displayError) {
     return <div className="alert alert-error">{displayError}</div>;
   }
 
-  const showLoading = busy && pageCount < 1;
-  const atFit = Math.abs(zoom - fitZoom) < 0.005;
+  const showLoading = loadingDoc && pageCount < 1;
 
   return (
     <div className="pdf-preview-shell">
@@ -255,9 +458,10 @@ export function PdfCanvasViewer({
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={busy || page <= 1}
+              disabled={loadingDoc || page <= 1}
               onClick={() => {
                 stickToFitRef.current = true;
+                zoomAnchorRef.current = null;
                 setPage((p) => Math.max(1, p - 1));
               }}
               aria-label="Pàgina anterior"
@@ -270,9 +474,10 @@ export function PdfCanvasViewer({
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={busy || page >= pageCount}
+              disabled={loadingDoc || page >= pageCount}
               onClick={() => {
                 stickToFitRef.current = true;
+                zoomAnchorRef.current = null;
                 setPage((p) => Math.min(pageCount, p + 1));
               }}
               aria-label="Pàgina següent"
@@ -281,33 +486,40 @@ export function PdfCanvasViewer({
             </button>
           </div>
 
-          <div className="pdf-preview-toolbar-group pdf-preview-workspace-zoom">
+          <div
+            className="pdf-preview-toolbar-group pdf-preview-workspace-zoom"
+            role="group"
+            aria-label="Zoom"
+          >
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={busy || zoom <= ZOOM_MIN}
-              onClick={() => bumpZoom(-ZOOM_STEP)}
+              disabled={zoom <= minZoom + 0.001}
+              onClick={() => bumpZoom(-1)}
               aria-label="Reduir zoom"
+              title="Reduir zoom"
             >
               −
             </button>
-            <span className="pdf-preview-toolbar-label">
-              {Math.round(zoom * 100)}%
+            <span className="pdf-preview-toolbar-label" aria-live="polite">
+              {zoomPercent}%
             </span>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={busy || zoom >= ZOOM_MAX}
-              onClick={() => bumpZoom(ZOOM_STEP)}
+              disabled={zoom >= maxZoom - 0.001}
+              onClick={() => bumpZoom(1)}
               aria-label="Augmentar zoom"
+              title="Augmentar zoom"
             >
               +
             </button>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={busy || atFit}
+              disabled={atFit}
               onClick={resetToFit}
+              title="Ajustar a la finestra"
             >
               Ajustar
             </button>
@@ -318,6 +530,7 @@ export function PdfCanvasViewer({
       <div
         ref={frameRef}
         className="pdf-preview-frame"
+        data-zoomed={atFit ? undefined : "true"}
         aria-busy={busy}
         aria-label={title}
         hidden={showLoading}
