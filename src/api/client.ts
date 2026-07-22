@@ -29,7 +29,12 @@ import type {
   EmailListResponse,
   EmailOut,
   EmailUpdate,
+  FolderCreateRequest,
+  FolderCreateResponse,
+  FolderDeleteResponse,
   FolderListResponse,
+  FolderRenameRequest,
+  FolderRenameResponse,
   FolderRoot,
   HealthOut,
   JobCreated,
@@ -585,6 +590,76 @@ export function listFolders(params?: {
   setModeParam(qs, params?.mode);
   const query = qs.toString();
   return request<FolderListResponse>(`/folders${query ? `?${query}` : ""}`);
+}
+
+export function createFolder(
+  params: {
+    root: FolderRoot | string;
+    /** Admin tenancy filter: PERSONAL | EMPRESA. */
+    mode?: string | null;
+  },
+  body: FolderCreateRequest,
+  options?: { quiet?: boolean },
+): Promise<FolderCreateResponse> {
+  const qs = new URLSearchParams();
+  qs.set("root", params.root);
+  setModeParam(qs, params.mode);
+  return request<FolderCreateResponse>(
+    `/folders?${qs}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    options?.quiet
+      ? false
+      : { success: "Carpeta creada", errorPrefix: "Error en crear la carpeta" },
+  );
+}
+
+export function renameFolder(
+  body: FolderRenameRequest,
+  options?: { quiet?: boolean },
+): Promise<FolderRenameResponse> {
+  return request<FolderRenameResponse>(
+    `/folders/rename`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    options?.quiet
+      ? false
+      : { success: "Carpeta reanomenada", errorPrefix: "Error en reanomenar" },
+  );
+}
+
+export function deleteFolder(
+  params: {
+    root: FolderRoot | string;
+    name: string;
+    /** Admin tenancy filter: PERSONAL | EMPRESA. */
+    mode?: string | null;
+    /** When true, delete non-empty folder and its contents. */
+    force?: boolean;
+  },
+  options?: { quiet?: boolean },
+): Promise<FolderDeleteResponse> {
+  const qs = new URLSearchParams();
+  qs.set("root", params.root);
+  qs.set("name", params.name);
+  setModeParam(qs, params.mode);
+  if (params.force) qs.set("force", "true");
+  return request<FolderDeleteResponse>(
+    `/folders?${qs}`,
+    { method: "DELETE" },
+    options?.quiet
+      ? false
+      : {
+          success: "Carpeta eliminada",
+          errorPrefix: "Error en eliminar la carpeta",
+        },
+  );
 }
 
 // --- Emails ---

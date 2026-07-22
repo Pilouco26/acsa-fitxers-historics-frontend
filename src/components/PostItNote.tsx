@@ -41,6 +41,7 @@ export function PostItNote({
   const [body, setBody] = useState(note.body);
   const [dragging, setDragging] = useState(false);
   const dragMode = useRef<DragMode>(null);
+  const dragPointerId = useRef<number | null>(null);
   const dragOrigin = useRef({
     px: 0,
     py: 0,
@@ -49,10 +50,21 @@ export function PostItNote({
     w: 0,
     h: 0,
   });
+  const noteRef = useRef(note);
+  const scaleRef = useRef(scale);
+  const onChangeRef = useRef(onChange);
   const rootRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const focusFieldRef = useRef<"title" | "body">("title");
+  const dragListeners = useRef<{
+    move: ((e: PointerEvent) => void) | null;
+    up: ((e: PointerEvent) => void) | null;
+  }>({ move: null, up: null });
+
+  noteRef.current = note;
+  scaleRef.current = scale;
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!editing) {
@@ -72,15 +84,66 @@ export function PostItNote({
     }
   }, [editing]);
 
+  useEffect(() => {
+    function onPointerMove(e: PointerEvent) {
+      if (dragPointerId.current !== e.pointerId || !dragMode.current) return;
+      const dx = (e.clientX - dragOrigin.current.px) / scaleRef.current;
+      const dy = (e.clientY - dragOrigin.current.py) / scaleRef.current;
+      const id = noteRef.current.id;
+      if (dragMode.current === "move") {
+        onChangeRef.current(id, {
+          x: Math.max(0, dragOrigin.current.x + dx),
+          y: Math.max(0, dragOrigin.current.y + dy),
+        });
+      } else {
+        onChangeRef.current(id, {
+          width: Math.max(MIN_W, dragOrigin.current.w + dx),
+          height: Math.max(MIN_H, dragOrigin.current.h + dy),
+        });
+      }
+    }
+
+    function onPointerUp(e: PointerEvent) {
+      if (dragPointerId.current !== e.pointerId) return;
+      dragMode.current = null;
+      dragPointerId.current = null;
+      setDragging(false);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      const el = rootRef.current;
+      if (el?.hasPointerCapture(e.pointerId)) {
+        try {
+          el.releasePointerCapture(e.pointerId);
+        } catch {
+          /* already released */
+        }
+      }
+    }
+
+    // Stable for this mount — startDrag attaches these synchronously.
+    dragListeners.current = { move: onPointerMove, up: onPointerUp };
+
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      dragListeners.current = { move: null, up: null };
+    };
+  }, []);
+
   function startDrag(
     e: ReactPointerEvent,
     mode: Exclude<DragMode, null>,
   ) {
     if (editing) return;
+    // Touch / pen report button 0; ignore non-primary mouse buttons only.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     onBringFront(note.id);
     dragMode.current = mode;
+    dragPointerId.current = e.pointerId;
     setDragging(true);
     dragOrigin.current = {
       px: e.clientX,
@@ -90,35 +153,17 @@ export function PostItNote({
       w: note.width,
       h: note.height,
     };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }
-
-  function onPointerMove(e: ReactPointerEvent) {
-    if (!dragMode.current) return;
-    const dx = (e.clientX - dragOrigin.current.px) / scale;
-    const dy = (e.clientY - dragOrigin.current.py) / scale;
-    if (dragMode.current === "move") {
-      onChange(note.id, {
-        x: Math.max(0, dragOrigin.current.x + dx),
-        y: Math.max(0, dragOrigin.current.y + dy),
-      });
-    } else {
-      onChange(note.id, {
-        width: Math.max(MIN_W, dragOrigin.current.w + dx),
-        height: Math.max(MIN_H, dragOrigin.current.h + dy),
-      });
+    const { move, up } = dragListeners.current;
+    if (move && up) {
+      // Attach immediately so the first touch moves aren't lost waiting for a re-render.
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
     }
-  }
-
-  function endDrag(e: ReactPointerEvent) {
-    if (!dragMode.current) return;
-    dragMode.current = null;
-    setDragging(false);
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* already released */
-    }
+    rootRef.current?.setPointerCapture(e.pointerId);
   }
 
   function commitEdit() {
@@ -160,7 +205,6 @@ export function PostItNote({
         transform: `rotate(${note.rotation}deg)`,
       }}
       onPointerDown={(e) => {
-        if (e.button !== 0) return;
         if (
           (e.target as HTMLElement).closest(
             ".post-it-actions, .post-it-resize, .post-it-colors, .post-it-title-input, .post-it-body-input",
@@ -170,9 +214,6 @@ export function PostItNote({
         }
         if (!editing) startDrag(e, "move");
       }}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
       onDoubleClick={(e) => {
         e.stopPropagation();
         const target = e.target as HTMLElement;
@@ -281,12 +322,8 @@ export function PostItNote({
         aria-label="Redimensionar"
         title="Redimensionar"
         onPointerDown={(e) => {
-          if (e.button !== 0) return;
           startDrag(e, "resize");
         }}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
       />
     </article>
   );

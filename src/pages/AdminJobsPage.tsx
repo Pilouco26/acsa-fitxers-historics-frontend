@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, cancelJob, listAdminJobs } from "@/api/client";
+import {
+  ApiError,
+  cancelJob,
+  isForbiddenError,
+  isUnauthorizedError,
+  listAdminJobs,
+} from "@/api/client";
 import type { JobStatus } from "@/api/types";
 import { PageHeader } from "@/components/PageHeader";
 
@@ -30,8 +36,10 @@ function formatTs(ts: string | null | undefined): string {
 
 export function AdminJobsPage() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [status, setStatus] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const isActive = location.pathname === "/admin/jobs";
 
   const jobsQuery = useQuery({
     queryKey: ["admin-jobs", status],
@@ -40,7 +48,18 @@ export function AdminJobsPage() {
         status: status || undefined,
         limit: 50,
       }),
-    refetchInterval: 5000,
+    retry: (count, err) =>
+      !isForbiddenError(err) && !isUnauthorizedError(err) && count < 1,
+    refetchInterval: (query) => {
+      if (!isActive) return false;
+      if (
+        isForbiddenError(query.state.error) ||
+        isUnauthorizedError(query.state.error)
+      ) {
+        return false;
+      }
+      return 5000;
+    },
   });
 
   const cancelMutation = useMutation({
@@ -63,6 +82,9 @@ export function AdminJobsPage() {
   const errorMessage = (() => {
     const err = jobsQuery.error;
     if (!err) return null;
+    if (isForbiddenError(err)) {
+      return "No tens permís per veure els treballs.";
+    }
     if (err instanceof ApiError && err.status === 404) {
       return "L'API de treballs d'administració encara no està disponible al backend.";
     }

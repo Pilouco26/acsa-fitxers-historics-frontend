@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
+  isForbiddenError,
+  isUnauthorizedError,
   listAdminServices,
   restartAdminService,
 } from "@/api/client";
@@ -90,12 +92,25 @@ function ServiceRow({
 
 export function AdminServicesPage() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [actionError, setActionError] = useState<string | null>(null);
+  const isActive = location.pathname === "/admin/services";
 
   const servicesQuery = useQuery({
     queryKey: ["admin-services"],
     queryFn: listAdminServices,
-    refetchInterval: 10_000,
+    retry: (count, err) =>
+      !isForbiddenError(err) && !isUnauthorizedError(err) && count < 1,
+    refetchInterval: (query) => {
+      if (!isActive) return false;
+      if (
+        isForbiddenError(query.state.error) ||
+        isUnauthorizedError(query.state.error)
+      ) {
+        return false;
+      }
+      return 10_000;
+    },
   });
 
   const restartMutation = useMutation({
@@ -118,6 +133,9 @@ export function AdminServicesPage() {
   const errorMessage = (() => {
     const err = servicesQuery.error;
     if (!err) return null;
+    if (isForbiddenError(err)) {
+      return "No tens permís per veure els serveis.";
+    }
     if (err instanceof ApiError && err.status === 404) {
       return "L'API de serveis encara no està disponible al backend.";
     }

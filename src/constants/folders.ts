@@ -9,6 +9,20 @@ export function isHiddenHubFolder(name: string): boolean {
   return name.trim() === FOLDER_INBOX;
 }
 
+/**
+ * Flat hub folder name suitable for create/rename (no path separators, not reserved).
+ * Matches backend validation expected by folder CRUD APIs.
+ */
+export function isValidExplorerFolderName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  if (trimmed === FOLDER_INBOX) return false;
+  if (trimmed === "." || trimmed === "..") return false;
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) return false;
+  if (trimmed.includes("\\") || trimmed.includes("/")) return false;
+  return true;
+}
+
 export function documentsListPath(folder?: string | null): string {
   const name = folder?.trim();
   if (!name) return "/documents/list";

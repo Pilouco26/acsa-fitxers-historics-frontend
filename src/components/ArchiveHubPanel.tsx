@@ -1,7 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
-import { listFolders, listPictures, listVideos } from "@/api/client";
+import toast from "react-hot-toast";
+import {
+  ApiError,
+  createFolder,
+  deleteFolder,
+  listFolders,
+  listPictures,
+  listVideos,
+  renameFolder,
+} from "@/api/client";
+import type { FolderRoot } from "@/api/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { DOCUMENT_STATUS_OK } from "@/constants/globals";
 import {
@@ -10,6 +20,7 @@ import {
   FOLDER_ROOT_ARCHIVE,
   FOLDER_ROOT_MEDIA,
   isHiddenHubFolder,
+  isValidExplorerFolderName,
   mediaCatalogPath,
 } from "@/constants/folders";
 import { includesFolded } from "@/utils/foldSearchText";
@@ -85,6 +96,24 @@ export function mergeFolderBubbles(
   );
 }
 
+function folderNameSet(names: string[]): Set<string> {
+  return new Set(
+    names.map((n) => n.trim()).filter((n) => n && !isHiddenHubFolder(n)),
+  );
+}
+
+function rootsForFolderName(
+  name: string,
+  archiveNames: Set<string>,
+  mediaNames: Set<string>,
+): FolderRoot[] {
+  const key = name.trim();
+  const roots: FolderRoot[] = [];
+  if (archiveNames.has(key)) roots.push(FOLDER_ROOT_ARCHIVE);
+  if (mediaNames.has(key)) roots.push(FOLDER_ROOT_MEDIA);
+  return roots;
+}
+
 function useHubFolders() {
   const { apiMode } = useAuth();
   const archiveQuery = useQuery({
@@ -107,12 +136,22 @@ function useHubFolders() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const archiveNameSet = useMemo(() => {
+    if (archiveQuery.isError) return new Set<string>();
+    return folderNameSet(archiveQuery.data?.items.map((f) => f.name) ?? []);
+  }, [archiveQuery.data?.items, archiveQuery.isError]);
+
   const mediaFolderNames = useMemo(() => {
     if (mediaQuery.isError) return [];
     return (mediaQuery.data?.items ?? [])
       .map((f) => f.name.trim())
       .filter((name) => name && !isHiddenHubFolder(name));
   }, [mediaQuery.data?.items, mediaQuery.isError]);
+
+  const mediaNameSet = useMemo(
+    () => new Set(mediaFolderNames),
+    [mediaFolderNames],
+  );
 
   const mediaContentQuery = useQuery({
     queryKey: ["hub-media-folder-contents", mediaFolderNames],
@@ -146,9 +185,7 @@ function useHubFolders() {
   });
 
   const folders = useMemo(() => {
-    const archiveNames = archiveQuery.isError
-      ? []
-      : (archiveQuery.data?.items.map((f) => f.name) ?? []);
+    const archiveNames = [...archiveNameSet];
     const mediaNames = mediaQuery.isError ? [] : mediaFolderNames;
 
     // While probing, avoid flashing false Vídeo/Fotos badges on every media folder.
@@ -164,8 +201,7 @@ function useHubFolders() {
       videoFolders,
     });
   }, [
-    archiveQuery.data?.items,
-    archiveQuery.isError,
+    archiveNameSet,
     mediaFolderNames,
     mediaQuery.isError,
     mediaContentQuery.data?.pictureFolders,
@@ -180,7 +216,13 @@ function useHubFolders() {
       mediaContentQuery.isLoading &&
       !mediaContentQuery.isError);
 
-  return { folders, isLoading };
+  return {
+    folders,
+    isLoading,
+    apiMode,
+    archiveNameSet,
+    mediaNameSet,
+  };
 }
 
 function FolderContentBadges({ folder }: { folder: HubFolderCapabilities }) {
@@ -229,6 +271,23 @@ type ArchiveHubPanelProps = {
   onSearchFilterChange?: (value: string) => void;
 };
 
+function promptFolderName(message: string, initial = ""): string | null {
+  const raw = window.prompt(message, initial);
+  if (raw == null) return null;
+  const name = raw.trim();
+  if (!name) {
+    toast.error("El nom de la carpeta no pot estar buit.");
+    return null;
+  }
+  if (!isValidExplorerFolderName(name)) {
+    toast.error(
+      "Nom de carpeta no vàlid (sense barres, ni «.», ni «..», ni «_PENDENTS»).",
+    );
+    return null;
+  }
+  return name;
+}
+
 /** Folder-bubble hub for documents / fotos / vídeos. */
 export function ArchiveHubPanel({
   initialScrollTop = 0,
@@ -237,7 +296,10 @@ export function ArchiveHubPanel({
   onSearchFilterChange,
 }: ArchiveHubPanelProps = {}) {
   const navigate = useNavigate();
-  const { folders, isLoading } = useHubFolders();
+  const queryClient = useQueryClient();
+  const { folders, isLoading, apiMode, archiveNameSet, mediaNameSet } =
+    useHubFolders();
+  const [menuFolder, setMenuFolder] = useState<string | null>(null);
   const filteredFolders = useMemo(() => {
     const query = searchFilter.trim();
     if (!query) return folders;
@@ -248,6 +310,225 @@ export function ArchiveHubPanel({
   const onScrollTopChangeRef = useRef(onScrollTopChange);
   initialScrollTopRef.current = initialScrollTop;
   onScrollTopChangeRef.current = onScrollTopChange;
+
+  const modeOpts = apiMode ? { mode: apiMode } : {};
+
+  const invalidateFolderQueries = () => {
+    void queryClient.invalidateQueries({ queryKey: ["folders"] });
+    void queryClient.invalidateQueries({
+      queryKey: ["hub-media-folder-contents"],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["documents"] });
+    void queryClient.invalidateQueries({ queryKey: ["pictures"] });
+    void queryClient.invalidateQueries({ queryKey: ["videos"] });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const roots: FolderRoot[] = [FOLDER_ROOT_ARCHIVE, FOLDER_ROOT_MEDIA];
+      const errors: string[] = [];
+      let created = 0;
+      for (const root of roots) {
+        try {
+          await createFolder({ root, ...modeOpts }, { name }, { quiet: true });
+          created += 1;
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 409) {
+            created += 1;
+            continue;
+          }
+          errors.push(
+            `${root}: ${err instanceof Error ? err.message : "Error"}`,
+          );
+        }
+      }
+      if (created === 0) {
+        throw new Error(errors[0] ?? "No s'ha pogut crear la carpeta.");
+      }
+      if (errors.length > 0) {
+        throw new Error(errors.join(" · "));
+      }
+    },
+    onSuccess: () => {
+      toast.success("Carpeta creada");
+      invalidateFolderQueries();
+    },
+    onError: (err) => {
+      toast.error(
+        `Error en crear la carpeta: ${err instanceof Error ? err.message : "Error"}`,
+      );
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: async ({
+      fromName,
+      toName,
+    }: {
+      fromName: string;
+      toName: string;
+    }) => {
+      const roots = rootsForFolderName(fromName, archiveNameSet, mediaNameSet);
+      if (roots.length === 0) {
+        throw new Error("No s'ha trobat la carpeta.");
+      }
+      const errors: string[] = [];
+      for (const root of roots) {
+        try {
+          await renameFolder(
+            {
+              root,
+              from_name: fromName,
+              to_name: toName,
+              ...(apiMode ? { mode: apiMode } : {}),
+            },
+            { quiet: true },
+          );
+        } catch (err) {
+          errors.push(
+            `${root}: ${err instanceof Error ? err.message : "Error"}`,
+          );
+        }
+      }
+      if (errors.length === roots.length) {
+        throw new Error(errors[0] ?? "No s'ha pogut reanomenar.");
+      }
+      if (errors.length > 0) {
+        throw new Error(errors.join(" · "));
+      }
+    },
+    onSuccess: () => {
+      toast.success("Carpeta reanomenada");
+      invalidateFolderQueries();
+      setMenuFolder(null);
+    },
+    onError: (err) => {
+      toast.error(
+        `Error en reanomenar: ${err instanceof Error ? err.message : "Error"}`,
+      );
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async ({
+      name,
+      force,
+    }: {
+      name: string;
+      force: boolean;
+    }) => {
+      const roots = rootsForFolderName(name, archiveNameSet, mediaNameSet);
+      if (roots.length === 0) {
+        throw new Error("No s'ha trobat la carpeta.");
+      }
+      const errors: string[] = [];
+      const notEmptyRoots: string[] = [];
+      let deleted = 0;
+      for (const root of roots) {
+        try {
+          await deleteFolder(
+            { root, name, force, ...modeOpts },
+            { quiet: true },
+          );
+          deleted += 1;
+        } catch (err) {
+          if (!force && err instanceof ApiError && err.status === 409) {
+            notEmptyRoots.push(root);
+            continue;
+          }
+          errors.push(
+            `${root}: ${err instanceof Error ? err.message : "Error"}`,
+          );
+        }
+      }
+      if (deleted === 0 && notEmptyRoots.length > 0) {
+        throw new ApiError(
+          409,
+          `La carpeta no està buida (${notEmptyRoots.join(", ")}).`,
+        );
+      }
+      if (deleted === 0) {
+        throw new Error(errors[0] ?? "No s'ha pogut eliminar la carpeta.");
+      }
+      if (errors.length > 0 || notEmptyRoots.length > 0) {
+        throw new Error(
+          [...errors, ...notEmptyRoots.map((r) => `${r}: no buida`)].join(
+            " · ",
+          ),
+        );
+      }
+    },
+    onSuccess: () => {
+      toast.success("Carpeta eliminada");
+      invalidateFolderQueries();
+      setMenuFolder(null);
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 409) return;
+      toast.error(
+        `Error en eliminar la carpeta: ${err instanceof Error ? err.message : "Error"}`,
+      );
+    },
+  });
+
+  const busy =
+    createMutation.isPending ||
+    renameMutation.isPending ||
+    deleteMutation.isPending;
+
+  const handleCreateFolder = () => {
+    const name = promptFolderName("Nom de la nova carpeta:");
+    if (!name) return;
+    const exists =
+      archiveNameSet.has(name) ||
+      mediaNameSet.has(name) ||
+      folders.some(
+        (f) => f.name.localeCompare(name, "ca", { sensitivity: "base" }) === 0,
+      );
+    if (exists) {
+      toast.error(`La carpeta «${name}» ja existeix.`);
+      return;
+    }
+    createMutation.mutate(name);
+  };
+
+  const handleRenameFolder = (fromName: string) => {
+    const toName = promptFolderName("Nou nom de la carpeta:", fromName);
+    if (!toName) return;
+    if (toName === fromName) {
+      setMenuFolder(null);
+      return;
+    }
+    const conflict =
+      (archiveNameSet.has(toName) || mediaNameSet.has(toName)) &&
+      toName.localeCompare(fromName, "ca", { sensitivity: "base" }) !== 0;
+    if (conflict) {
+      toast.error(`Ja existeix una carpeta anomenada «${toName}».`);
+      return;
+    }
+    renameMutation.mutate({ fromName, toName });
+  };
+
+  const handleDeleteFolder = (name: string) => {
+    const emptyOk = window.confirm(
+      `Voleu eliminar la carpeta «${name}»?\n\nNomés s'eliminarà si està buida.`,
+    );
+    if (!emptyOk) return;
+    deleteMutation.mutate(
+      { name, force: false },
+      {
+        onError: (err) => {
+          if (!(err instanceof ApiError) || err.status !== 409) return;
+          const forceOk = window.confirm(
+            `La carpeta «${name}» no està buida.\n\nVoleu eliminar-la amb tot el contingut? Aquesta acció no es pot desfer fàcilment.`,
+          );
+          if (forceOk) {
+            deleteMutation.mutate({ name, force: true });
+          }
+        },
+      },
+    );
+  };
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -269,6 +550,24 @@ export function ArchiveHubPanel({
       el.removeEventListener("scroll", handleScroll);
     };
   }, []);
+
+  useEffect(() => {
+    if (!menuFolder) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuFolder(null);
+    };
+    const onPointer = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-folder-menu]")) return;
+      setMenuFolder(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointer);
+    };
+  }, [menuFolder]);
 
   return (
     <div className="archive-hub">
@@ -311,40 +610,102 @@ export function ArchiveHubPanel({
         )}
 
         <div className="archive-hub-cards">
-        {isLoading && <p className="empty-state">Carregant carpetes…</p>}
+          {isLoading && <p className="empty-state">Carregant carpetes…</p>}
 
-        {!isLoading && folders.length === 0 && (
-          <p className="empty-state">No hi ha carpetes disponibles.</p>
-        )}
+          {!isLoading && folders.length === 0 && (
+            <p className="empty-state">No hi ha carpetes disponibles.</p>
+          )}
 
-        {!isLoading && folders.length > 0 && filteredFolders.length === 0 && (
-          <p className="empty-state">Cap carpeta coincideix amb la cerca.</p>
-        )}
+          {!isLoading && folders.length > 0 && filteredFolders.length === 0 && (
+            <p className="empty-state">Cap carpeta coincideix amb la cerca.</p>
+          )}
 
-        {!isLoading && filteredFolders.length > 0 && (
-          <div className="archive-hub-card-grid" role="list">
-            {filteredFolders.map((folder) => (
-              <button
-                key={folder.name}
-                type="button"
-                className="archive-hub-card"
-                role="listitem"
-                title={folder.name}
-                onClick={() => navigate(documentsFolderPickPath(folder.name))}
-              >
-                <FolderCardIcon />
-                <span className="archive-hub-card-body">
-                  <span className="archive-hub-card-label">{folder.name}</span>
-                  <FolderContentBadges folder={folder} />
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+          {!isLoading && filteredFolders.length > 0 && (
+            <div className="archive-hub-card-grid" role="list">
+              {filteredFolders.map((folder) => (
+                <div
+                  key={folder.name}
+                  className="archive-hub-card-wrap"
+                  role="listitem"
+                  data-folder-menu={
+                    menuFolder === folder.name ? "" : undefined
+                  }
+                >
+                  <button
+                    type="button"
+                    className="archive-hub-card"
+                    title={folder.name}
+                    disabled={busy}
+                    onClick={() =>
+                      navigate(documentsFolderPickPath(folder.name))
+                    }
+                  >
+                    <FolderCardIcon />
+                    <span className="archive-hub-card-body">
+                      <span className="archive-hub-card-label">
+                        {folder.name}
+                      </span>
+                      <FolderContentBadges folder={folder} />
+                    </span>
+                  </button>
+                  <div className="archive-hub-card-menu">
+                    <button
+                      type="button"
+                      className="archive-hub-card-menu-trigger"
+                      aria-label={`Accions per a ${folder.name}`}
+                      aria-expanded={menuFolder === folder.name}
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuFolder((prev) =>
+                          prev === folder.name ? null : folder.name,
+                        );
+                      }}
+                    >
+                      ⋯
+                    </button>
+                    {menuFolder === folder.name && (
+                      <div
+                        className="archive-hub-card-menu-popover"
+                        role="menu"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="archive-hub-card-menu-item"
+                          disabled={busy}
+                          onClick={() => handleRenameFolder(folder.name)}
+                        >
+                          Canviar el nom
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="archive-hub-card-menu-item archive-hub-card-menu-item--danger"
+                          disabled={busy}
+                          onClick={() => handleDeleteFolder(folder.name)}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="archive-hub-actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy}
+          onClick={handleCreateFolder}
+        >
+          {createMutation.isPending ? "Creant…" : "Nova carpeta"}
+        </button>
         <button
           type="button"
           className="btn btn-secondary"
@@ -424,7 +785,9 @@ function PickOptionIcon({ kind }: { kind: PickOptionKey }) {
 }
 
 /** Choose Documents / Fotos / Vídeo for a selected folder. */
-export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelProps) {
+export function ArchiveFolderPickPanel({
+  folderName,
+}: ArchiveFolderPickPanelProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const skipAutoPick = Boolean(
@@ -491,7 +854,9 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
           key: "pictures",
           label: "Fotos",
           count: picCount,
-          path: mediaCatalogPath("picture", folderName, { fromDocuments: true }),
+          path: mediaCatalogPath("picture", folderName, {
+            fromDocuments: true,
+          }),
         },
         {
           key: "videos",
@@ -517,7 +882,9 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
         key: "pictures",
         label: "Fotos",
         count: picCount,
-        path: mediaCatalogPath("picture", folder.name, { fromDocuments: true }),
+        path: mediaCatalogPath("picture", folder.name, {
+          fromDocuments: true,
+        }),
       });
     }
     if (folder.hasVideos) {
@@ -554,7 +921,9 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
           {isLoading && <p className="empty-state">Carregant…</p>}
 
           {!isLoading && options.length === 0 && (
-            <p className="empty-state">Aquesta carpeta no té contingut disponible.</p>
+            <p className="empty-state">
+              Aquesta carpeta no té contingut disponible.
+            </p>
           )}
 
           {!isLoading && options.length > 0 && (
@@ -568,7 +937,9 @@ export function ArchiveFolderPickPanel({ folderName }: ArchiveFolderPickPanelPro
                   onClick={() => navigate(opt.path)}
                 >
                   <PickOptionIcon kind={opt.key} />
-                  <span className="archive-hub-pick-option-title">{opt.label}</span>
+                  <span className="archive-hub-pick-option-title">
+                    {opt.label}
+                  </span>
                   <span className="archive-hub-pick-option-subtitle">
                     {opt.count != null ? `${opt.count}` : "—"}
                   </span>

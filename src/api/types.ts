@@ -262,6 +262,14 @@ export interface AssignResponse {
 export interface SettingsOut {
   input_folder: string;
   output_folder: string;
+  /** Absolute path behind logical `/app/storage`. */
+  storage_path?: string;
+  /** Absolute path behind logical `/data/archive`. */
+  archive_path?: string;
+  /** Absolute path of the media folder root. */
+  media_path?: string;
+  /** Absolute path of the documents folder root. */
+  documents_path?: string;
   gemini_api_key: string;
   gemini_api_key_backup: string;
   gemini_model: string;
@@ -271,6 +279,10 @@ export interface SettingsOut {
 export interface SettingsUpdate {
   input_folder?: string | null;
   output_folder?: string | null;
+  storage_path?: string | null;
+  archive_path?: string | null;
+  media_path?: string | null;
+  documents_path?: string | null;
   gemini_api_key?: string | null;
   gemini_api_key_backup?: string | null;
   gemini_model?: string | null;
@@ -385,6 +397,48 @@ export interface FolderListResponse {
   total: number;
 }
 
+/** Known values for `GET /folders?root=`. */
+export type FolderRoot = "archive" | "media";
+
+/** Body for `POST /folders` (create empty folder under a root). */
+export interface FolderCreateRequest {
+  name: string;
+}
+
+export interface FolderCreateResponse {
+  name: string;
+  relative_path: string;
+  root: FolderRoot | string;
+}
+
+/** Body for `POST /folders/rename`. */
+export interface FolderRenameRequest {
+  root: FolderRoot | string;
+  mode?: string | null;
+  from_name: string;
+  to_name: string;
+  dry_run?: boolean;
+}
+
+export interface FolderRenameResponse {
+  root: FolderRoot | string;
+  from_name: string;
+  to_name: string;
+  dry_run: boolean;
+  moved_items: number;
+  unchanged?: boolean;
+  relative_path_from: string;
+  relative_path_to: string;
+}
+
+export interface FolderDeleteResponse {
+  root: FolderRoot | string;
+  name: string;
+  deleted: boolean;
+  deleted_items: number;
+  forced: boolean;
+}
+
 // --- Media (pictures & videos) ---
 
 export type MediaKind = "picture" | "video";
@@ -441,9 +495,6 @@ export interface MediaFilters {
   limit?: number;
   offset?: number;
 }
-
-/** Known values for `GET /folders?root=`. */
-export type FolderRoot = "archive" | "media";
 
 export interface MediaUpdate {
   proposed_name?: string | null;
@@ -745,6 +796,18 @@ export interface AdminConfigStatus {
   output_folder_exists: boolean;
   input_folder_writable: boolean;
   output_folder_writable: boolean;
+  storage_path?: string;
+  archive_path?: string;
+  media_path?: string;
+  documents_path?: string;
+  storage_path_exists?: boolean;
+  archive_path_exists?: boolean;
+  media_path_exists?: boolean;
+  documents_path_exists?: boolean;
+  storage_path_writable?: boolean;
+  archive_path_writable?: boolean;
+  media_path_writable?: boolean;
+  documents_path_writable?: boolean;
   gemini_configured: boolean;
   gemini_backup_configured: boolean;
   gemini_model: string;

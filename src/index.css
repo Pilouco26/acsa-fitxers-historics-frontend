@@ -2276,11 +2276,18 @@ select {
   padding: 0.25rem 0 0.75rem;
 }
 
+.archive-hub-card-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
 .archive-hub-card {
   box-sizing: border-box;
   width: 100%;
   min-height: 4.75rem;
-  padding: 0.85rem 1rem;
+  padding: 0.85rem 2.25rem 0.85rem 1rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-surface);
@@ -2300,6 +2307,86 @@ select {
   border-color: var(--color-accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.archive-hub-card:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.archive-hub-card-menu {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+}
+
+.archive-hub-card-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.archive-hub-card-menu-trigger:hover,
+.archive-hub-card-menu-trigger[aria-expanded="true"] {
+  background: var(--color-border-light);
+  color: var(--color-text);
+}
+
+.archive-hub-card-menu-trigger:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.archive-hub-card-menu-popover {
+  position: absolute;
+  top: calc(100% + 0.15rem);
+  right: 0;
+  min-width: 9.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.archive-hub-card-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.archive-hub-card-menu-item:hover:not(:disabled) {
+  background: var(--color-border-light);
+}
+
+.archive-hub-card-menu-item--danger {
+  color: var(--color-danger, #b42318);
+}
+
+.archive-hub-card-menu-item:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .archive-hub-card:focus-visible {
@@ -3300,6 +3387,8 @@ select {
   box-shadow: var(--shadow);
   cursor: default;
   user-select: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .notes-scroll-surface {
@@ -3357,6 +3446,9 @@ select {
     0 8px 18px rgba(60, 40, 10, 0.18),
     0 2px 4px rgba(60, 40, 10, 0.12);
   cursor: grab;
+  /* Prevent the scrollable board from stealing the gesture on iPad/touch. */
+  touch-action: none;
+  -webkit-user-drag: none;
   transition:
     box-shadow 0.18s ease,
     filter 0.18s ease;
@@ -3387,6 +3479,7 @@ select {
 
 .post-it--editing {
   cursor: text;
+  touch-action: auto;
   box-shadow:
     0 0 0 2px rgba(var(--color-accent-rgb), 0.35),
     0 10px 24px rgba(60, 40, 10, 0.2);
@@ -3462,6 +3555,7 @@ select {
   resize: none;
   user-select: text;
   -webkit-user-select: text;
+  touch-action: auto;
   cursor: text;
 }
 
@@ -3561,6 +3655,7 @@ select {
   background:
     linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.28) 50%) no-repeat;
   cursor: nwse-resize;
+  touch-action: none;
   opacity: 0.7;
 }
 

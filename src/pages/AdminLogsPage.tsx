@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ApiError,
   downloadAdminLogs,
   getAdminLogs,
+  isForbiddenError,
+  isUnauthorizedError,
   listLogSources,
 } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
@@ -47,9 +49,11 @@ function levelClass(level: string | null | undefined): string {
 }
 
 export function AdminLogsPage() {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const initialSource = searchParams.get("source") ?? "";
   const initialJobId = searchParams.get("job_id") ?? "";
+  const isActive = location.pathname === "/admin/logs";
 
   const [source, setSource] = useState(initialSource);
   const [level, setLevel] = useState("");
@@ -74,6 +78,8 @@ export function AdminLogsPage() {
     queryKey: ["admin-log-sources"],
     queryFn: listLogSources,
     staleTime: 60_000,
+    retry: (count, err) =>
+      !isForbiddenError(err) && !isUnauthorizedError(err) && count < 1,
   });
 
   const sources = sourcesQuery.data?.sources ?? [];
@@ -96,7 +102,18 @@ export function AdminLogsPage() {
         limit: 800,
       }),
     enabled: Boolean(source),
-    refetchInterval: live ? 3000 : false,
+    retry: (count, err) =>
+      !isForbiddenError(err) && !isUnauthorizedError(err) && count < 1,
+    refetchInterval: (query) => {
+      if (!live || !isActive) return false;
+      if (
+        isForbiddenError(query.state.error) ||
+        isUnauthorizedError(query.state.error)
+      ) {
+        return false;
+      }
+      return 3000;
+    },
   });
 
   const lines = logsQuery.data?.lines ?? [];
@@ -109,6 +126,9 @@ export function AdminLogsPage() {
   const errorMessage = useMemo(() => {
     const err = sourcesQuery.error ?? logsQuery.error;
     if (!err) return null;
+    if (isForbiddenError(err)) {
+      return "No tens permís per veure els logs.";
+    }
     if (err instanceof ApiError && err.status === 404) {
       return "L'API de logs encara no està disponible al backend.";
     }
