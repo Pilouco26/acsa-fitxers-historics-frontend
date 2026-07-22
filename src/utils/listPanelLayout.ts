@@ -35,19 +35,35 @@ export function measureListPanelChrome(
 }
 
 /**
- * Fit a fixed pageSize into the available height by growing row height so the
- * table keeps the same overall panel size (no extra empty strip, no scroll).
+ * Fit pageSize + row height into the available height so the table never
+ * overflows the card (which would clip the pagination bar under
+ * `overflow: hidden`). Prefers DOCUMENT_LIST_PAGE_SIZE; shrinks pageSize
+ * when filters/chrome leave too little room.
  */
 export function fitListPanelLayout(availableHeight: number): ListPanelFit {
   const available = Math.max(0, Math.floor(availableHeight));
-  const pageSize = DOCUMENT_LIST_PAGE_SIZE;
-  const totalRows = pageSize + 1; // header + data rows
 
-  const rowHeight = Math.max(
-    LIST_PANEL_ROW_HEIGHT_MIN_PX,
-    Math.floor(available / totalRows) || LIST_PANEL_ROW_HEIGHT_PX,
-  );
-  const height = rowHeight * totalRows;
+  let pageSize = DOCUMENT_LIST_PAGE_SIZE;
+  let totalRows = pageSize + 1; // header + data rows
+  let rowHeight = Math.floor(available / totalRows);
+
+  if (rowHeight < LIST_PANEL_ROW_HEIGHT_MIN_PX) {
+    const maxTotalRows = Math.max(
+      2,
+      Math.floor(available / LIST_PANEL_ROW_HEIGHT_MIN_PX),
+    );
+    pageSize = Math.max(1, Math.min(DOCUMENT_LIST_PAGE_SIZE, maxTotalRows - 1));
+    totalRows = pageSize + 1;
+    rowHeight = Math.max(
+      LIST_PANEL_ROW_HEIGHT_MIN_PX,
+      Math.floor(available / totalRows) || LIST_PANEL_ROW_HEIGHT_MIN_PX,
+    );
+  } else if (rowHeight === 0) {
+    rowHeight = LIST_PANEL_ROW_HEIGHT_PX;
+  }
+
+  // Never exceed available height — keeps pagination visible in the card.
+  const height = Math.min(available, rowHeight * totalRows);
 
   return { height, rowHeight, pageSize };
 }

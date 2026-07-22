@@ -444,6 +444,8 @@ select {
 .card-panel > .field,
 .card-panel > h3,
 .card-panel > .card-title,
+.card-panel > .table-filters-advanced,
+.card-panel > .table-pagination,
 .card-panel > p:not(.empty-state) {
   flex-shrink: 0;
 }
@@ -896,6 +898,7 @@ select {
   justify-content: space-between;
   gap: 0.75rem;
   flex-wrap: wrap;
+  flex-shrink: 0;
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--color-border-light);

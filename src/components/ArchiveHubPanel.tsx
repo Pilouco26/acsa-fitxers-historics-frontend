@@ -6,6 +6,7 @@ import {
   ApiError,
   createFolder,
   deleteFolder,
+  listDocuments,
   listFolders,
   listPictures,
   listVideos,
@@ -38,11 +39,17 @@ export function mergeFolderBubbles(
   archiveNames: string[],
   mediaNames: string[],
   mediaContents?: {
+    documentFolders?: Iterable<string>;
     pictureFolders?: Iterable<string>;
     videoFolders?: Iterable<string>;
   },
 ): HubFolderCapabilities[] {
   const map = new Map<string, HubFolderCapabilities>();
+  const documentFolders = new Set(
+    [...(mediaContents?.documentFolders ?? [])]
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
   const pictureFolders = new Set(
     [...(mediaContents?.pictureFolders ?? [])]
       .map((name) => name.trim())
@@ -53,19 +60,23 @@ export function mergeFolderBubbles(
       .map((name) => name.trim())
       .filter(Boolean),
   );
-  // When probes are omitted, keep legacy behaviour (any media folder → both).
-  const probesKnown = mediaContents != null;
+  // When probes are omitted, keep legacy behaviour (archive → docs; media → both).
+  const documentProbesKnown = mediaContents?.documentFolders != null;
+  const mediaProbesKnown = mediaContents != null;
 
   for (const name of archiveNames) {
     const key = name.trim();
     if (!key || isHiddenHubFolder(key)) continue;
+    const hasDocuments = documentProbesKnown
+      ? documentFolders.has(key)
+      : true;
     const existing = map.get(key);
     if (existing) {
-      existing.hasDocuments = true;
+      existing.hasDocuments = existing.hasDocuments || hasDocuments;
     } else {
       map.set(key, {
         name: key,
-        hasDocuments: true,
+        hasDocuments,
         hasPictures: false,
         hasVideos: false,
       });
@@ -75,8 +86,8 @@ export function mergeFolderBubbles(
   for (const name of mediaNames) {
     const key = name.trim();
     if (!key || isHiddenHubFolder(key)) continue;
-    const hasPictures = probesKnown ? pictureFolders.has(key) : true;
-    const hasVideos = probesKnown ? videoFolders.has(key) : true;
+    const hasPictures = mediaProbesKnown ? pictureFolders.has(key) : true;
+    const hasVideos = mediaProbesKnown ? videoFolders.has(key) : true;
     const existing = map.get(key);
     if (existing) {
       existing.hasPictures = existing.hasPictures || hasPictures;
@@ -141,6 +152,11 @@ function useHubFolders() {
     return folderNameSet(archiveQuery.data?.items.map((f) => f.name) ?? []);
   }, [archiveQuery.data?.items, archiveQuery.isError]);
 
+  const archiveFolderNames = useMemo(
+    () => [...archiveNameSet],
+    [archiveNameSet],
+  );
+
   const mediaFolderNames = useMemo(() => {
     if (mediaQuery.isError) return [];
     return (mediaQuery.data?.items ?? [])
@@ -152,6 +168,29 @@ function useHubFolders() {
     () => new Set(mediaFolderNames),
     [mediaFolderNames],
   );
+
+  const documentContentQuery = useQuery({
+    queryKey: ["hub-document-folder-contents", archiveFolderNames],
+    enabled: archiveFolderNames.length > 0,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const documentFolders = new Set<string>();
+
+      await Promise.all(
+        archiveFolderNames.map(async (folderName) => {
+          const documents = await listDocuments({
+            folder: folderName,
+            limit: 1,
+            status: DOCUMENT_STATUS_OK,
+          });
+          // Prefer items over total: filtered list totals can be unreliable.
+          if (documents.items.length > 0) documentFolders.add(folderName);
+        }),
+      );
+
+      return { documentFolders };
+    },
+  });
 
   const mediaContentQuery = useQuery({
     queryKey: ["hub-media-folder-contents", mediaFolderNames],
@@ -185,10 +224,13 @@ function useHubFolders() {
   });
 
   const folders = useMemo(() => {
-    const archiveNames = [...archiveNameSet];
+    const archiveNames = archiveFolderNames;
     const mediaNames = mediaQuery.isError ? [] : mediaFolderNames;
 
-    // While probing, avoid flashing false Vídeo/Fotos badges on every media folder.
+    // While probing, avoid flashing badges on every folder before counts return.
+    const documentFolders =
+      documentContentQuery.data?.documentFolders ??
+      (archiveNames.length > 0 ? [] : undefined);
     const pictureFolders =
       mediaContentQuery.data?.pictureFolders ??
       (mediaNames.length > 0 ? [] : undefined);
@@ -197,21 +239,25 @@ function useHubFolders() {
       (mediaNames.length > 0 ? [] : undefined);
 
     return mergeFolderBubbles(archiveNames, mediaNames, {
+      documentFolders,
       pictureFolders,
       videoFolders,
     });
   }, [
-    archiveNameSet,
+    archiveFolderNames,
     mediaFolderNames,
     mediaQuery.isError,
+    documentContentQuery.data?.documentFolders,
     mediaContentQuery.data?.pictureFolders,
     mediaContentQuery.data?.videoFolders,
-    mediaContentQuery.isLoading,
   ]);
 
   const isLoading =
     (archiveQuery.isLoading && !archiveQuery.isError) ||
     (mediaQuery.isLoading && !mediaQuery.isError) ||
+    (archiveFolderNames.length > 0 &&
+      documentContentQuery.isLoading &&
+      !documentContentQuery.isError) ||
     (mediaFolderNames.length > 0 &&
       mediaContentQuery.isLoading &&
       !mediaContentQuery.isError);
@@ -315,6 +361,9 @@ export function ArchiveHubPanel({
 
   const invalidateFolderQueries = () => {
     void queryClient.invalidateQueries({ queryKey: ["folders"] });
+    void queryClient.invalidateQueries({
+      queryKey: ["hub-document-folder-contents"],
+    });
     void queryClient.invalidateQueries({
       queryKey: ["hub-media-folder-contents"],
     });

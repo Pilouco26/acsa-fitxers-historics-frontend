@@ -323,8 +323,6 @@ export function DocumentsPage() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
-  const totalReady = !isFetching;
-  const totalPending = isFetching && items.length > 0;
 
   const routeDocumentQuery = useQuery({
     queryKey: ["documents", "detail", routeDocumentId],
@@ -1005,20 +1003,13 @@ export function DocumentsPage() {
                 </tbody>
               </table>
             </div>
-            {!isLoading && !isFetching && totalReady && (
-              <TablePagination
-                page={page}
-                pageSize={pageSize}
-                total={total}
-                compact={isCompact}
-                onPageChange={setPage}
-              />
-            )}
-            {totalPending && (
-              <p className="empty-state" style={{ marginTop: "0.5rem" }}>
-                Actualitzant paginació…
-              </p>
-            )}
+            <TablePagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              compact={isCompact}
+              onPageChange={setPage}
+            />
             </div>
           </div>
         )}
