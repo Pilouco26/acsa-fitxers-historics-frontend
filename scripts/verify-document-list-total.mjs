@@ -17,7 +17,7 @@ async function listDocuments(params) {
 }
 
 async function fetchFilteredCount(filters) {
-  const BATCH = 10_000;
+  const BATCH = 500;
   let offset = 0;
   let count = 0;
   for (;;) {

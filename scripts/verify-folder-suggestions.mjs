@@ -46,7 +46,7 @@ async function fetchJson(path) {
 
 async function fetchAllDocuments(status) {
   const items = [];
-  const batchSize = 10_000;
+  const batchSize = 500;
   let offset = 0;
   for (;;) {
     const page = await fetchJson(

@@ -1,7 +1,8 @@
 import { listDocuments } from "@/api/client";
 import type { DocumentOut } from "@/api/types";
 
-const BATCH_SIZE = 10_000;
+/** Backend `limit` max is 500 (OpenAPI); larger values return 422. */
+const BATCH_SIZE = 500;
 
 /** Load every document for a status by paging through the API. */
 export async function fetchAllDocuments(status: string): Promise<DocumentOut[]> {
