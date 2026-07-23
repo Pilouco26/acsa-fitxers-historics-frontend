@@ -25,7 +25,6 @@ import {
   mediaCatalogPath,
 } from "@/constants/folders";
 import { includesFolded } from "@/utils/foldSearchText";
-import { fetchFilteredDocumentCount } from "@/utils/documentListTotal";
 import { HubBackButton } from "@/components/HubBackButton";
 
 export type HubFolderCapabilities = {
@@ -169,98 +168,22 @@ function useHubFolders() {
     [mediaFolderNames],
   );
 
-  const documentContentQuery = useQuery({
-    queryKey: ["hub-document-folder-contents", archiveFolderNames],
-    enabled: archiveFolderNames.length > 0,
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const documentFolders = new Set<string>();
-
-      await Promise.all(
-        archiveFolderNames.map(async (folderName) => {
-          const documents = await listDocuments({
-            folder: folderName,
-            limit: 1,
-            status: DOCUMENT_STATUS_OK,
-          });
-          // Prefer items over total: filtered list totals can be unreliable.
-          if (documents.items.length > 0) documentFolders.add(folderName);
-        }),
-      );
-
-      return { documentFolders };
-    },
-  });
-
-  const mediaContentQuery = useQuery({
-    queryKey: ["hub-media-folder-contents", mediaFolderNames],
-    enabled: mediaFolderNames.length > 0,
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const pictureFolders = new Set<string>();
-      const videoFolders = new Set<string>();
-
-      await Promise.all(
-        mediaFolderNames.map(async (folderName) => {
-          const [pictures, videos] = await Promise.all([
-            listPictures({
-              folder: folderName,
-              limit: 1,
-              status: DOCUMENT_STATUS_OK,
-            }),
-            listVideos({
-              folder: folderName,
-              limit: 1,
-              status: DOCUMENT_STATUS_OK,
-            }),
-          ]);
-          if (pictures.total > 0) pictureFolders.add(folderName);
-          if (videos.total > 0) videoFolders.add(folderName);
-        }),
-      );
-
-      return { pictureFolders, videoFolders };
-    },
-  });
-
-  const folders = useMemo(() => {
-    const archiveNames = archiveFolderNames;
-    const mediaNames = mediaQuery.isError ? [] : mediaFolderNames;
-
-    // While probing, avoid flashing badges on every folder before counts return.
-    const documentFolders =
-      documentContentQuery.data?.documentFolders ??
-      (archiveNames.length > 0 ? [] : undefined);
-    const pictureFolders =
-      mediaContentQuery.data?.pictureFolders ??
-      (mediaNames.length > 0 ? [] : undefined);
-    const videoFolders =
-      mediaContentQuery.data?.videoFolders ??
-      (mediaNames.length > 0 ? [] : undefined);
-
-    return mergeFolderBubbles(archiveNames, mediaNames, {
-      documentFolders,
-      pictureFolders,
-      videoFolders,
-    });
-  }, [
-    archiveFolderNames,
-    mediaFolderNames,
-    mediaQuery.isError,
-    documentContentQuery.data?.documentFolders,
-    mediaContentQuery.data?.pictureFolders,
-    mediaContentQuery.data?.videoFolders,
-  ]);
+  // Names only on the hub. Content (docs / fotos / vídeos) is probed when a
+  // folder is opened — probing every folder up-front floods Docker / slow APIs.
+  // Empty probe sets hide badges until the pick screen loads real contents.
+  const folders = useMemo(
+    () =>
+      mergeFolderBubbles(archiveFolderNames, mediaFolderNames, {
+        documentFolders: [],
+        pictureFolders: [],
+        videoFolders: [],
+      }),
+    [archiveFolderNames, mediaFolderNames],
+  );
 
   const isLoading =
     (archiveQuery.isLoading && !archiveQuery.isError) ||
-    (mediaQuery.isLoading && !mediaQuery.isError) ||
-    (archiveFolderNames.length > 0 &&
-      documentContentQuery.isLoading &&
-      !documentContentQuery.isError) ||
-    (mediaFolderNames.length > 0 &&
-      mediaContentQuery.isLoading &&
-      !mediaContentQuery.isError);
+    (mediaQuery.isLoading && !mediaQuery.isError);
 
   return {
     folders,
@@ -269,6 +192,47 @@ function useHubFolders() {
     archiveNameSet,
     mediaNameSet,
   };
+}
+
+/** Probe documents / pictures / videos for a single folder (on open). */
+function useFolderContents(folderName: string, enabled = true) {
+  return useQuery({
+    queryKey: ["hub-folder-contents", folderName],
+    enabled: enabled && Boolean(folderName.trim()),
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const [documents, pictures, videos] = await Promise.all([
+        listDocuments({
+          folder: folderName,
+          limit: 1,
+          status: DOCUMENT_STATUS_OK,
+        }),
+        listPictures({
+          folder: folderName,
+          limit: 1,
+          status: DOCUMENT_STATUS_OK,
+        }),
+        listVideos({
+          folder: folderName,
+          limit: 1,
+          status: DOCUMENT_STATUS_OK,
+        }),
+      ]);
+      // Prefer document items over total: filtered list totals can be unreliable.
+      const hasDocuments = documents.items.length > 0;
+      const hasPictures = pictures.total > 0;
+      const hasVideos = videos.total > 0;
+      return {
+        hasDocuments,
+        hasPictures,
+        hasVideos,
+        docCount:
+          hasDocuments && documents.total > 0 ? documents.total : null,
+        picCount: hasPictures ? pictures.total : null,
+        vidCount: hasVideos ? videos.total : null,
+      };
+    },
+  });
 }
 
 function FolderContentBadges({ folder }: { folder: HubFolderCapabilities }) {
@@ -362,10 +326,7 @@ export function ArchiveHubPanel({
   const invalidateFolderQueries = () => {
     void queryClient.invalidateQueries({ queryKey: ["folders"] });
     void queryClient.invalidateQueries({
-      queryKey: ["hub-document-folder-contents"],
-    });
-    void queryClient.invalidateQueries({
-      queryKey: ["hub-media-folder-contents"],
+      queryKey: ["hub-folder-contents"],
     });
     void queryClient.invalidateQueries({ queryKey: ["documents"] });
     void queryClient.invalidateQueries({ queryKey: ["pictures"] });
@@ -842,46 +803,7 @@ export function ArchiveFolderPickPanel({
   const skipAutoPick = Boolean(
     (location.state as { skipAutoPick?: boolean } | null)?.skipAutoPick,
   );
-  const { folders, isLoading } = useHubFolders();
-
-  const folder = useMemo(
-    () => folders.find((f) => f.name === folderName) ?? null,
-    [folders, folderName],
-  );
-
-  const { data: docCount } = useQuery({
-    queryKey: ["pick-count-docs", folderName],
-    queryFn: () =>
-      fetchFilteredDocumentCount({
-        status: DOCUMENT_STATUS_OK,
-        folder: folderName,
-      }),
-    enabled: !isLoading && (folder?.hasDocuments ?? true),
-  });
-  const { data: picData } = useQuery({
-    queryKey: ["pick-count-pics", folderName],
-    queryFn: () =>
-      listPictures({
-        folder: folderName,
-        limit: 1,
-        status: DOCUMENT_STATUS_OK,
-      }),
-    enabled: !isLoading && (folder?.hasPictures ?? true),
-  });
-  const { data: vidData } = useQuery({
-    queryKey: ["pick-count-vids", folderName],
-    queryFn: () =>
-      listVideos({
-        folder: folderName,
-        limit: 1,
-        status: DOCUMENT_STATUS_OK,
-      }),
-    enabled: !isLoading && (folder?.hasVideos ?? true),
-  });
-
-  const picCount = picData?.total ?? null;
-  const vidCount = vidData?.total ?? null;
-  const docTotal = docCount ?? null;
+  const { data: contents, isLoading } = useFolderContents(folderName);
 
   const options = useMemo(() => {
     type PickOption = {
@@ -891,61 +813,37 @@ export function ArchiveFolderPickPanel({
       path: string;
     };
 
-    if (!folder) {
-      const opts: PickOption[] = [
-        {
-          key: "documents",
-          label: "Documents",
-          count: docTotal,
-          path: documentsListPath(folderName),
-        },
-        {
-          key: "pictures",
-          label: "Fotos",
-          count: picCount,
-          path: mediaCatalogPath("picture", folderName, {
-            fromDocuments: true,
-          }),
-        },
-        {
-          key: "videos",
-          label: "Vídeo",
-          count: vidCount,
-          path: mediaCatalogPath("video", folderName, { fromDocuments: true }),
-        },
-      ];
-      return opts;
-    }
+    if (!contents) return [] as PickOption[];
 
     const next: PickOption[] = [];
-    if (folder.hasDocuments) {
+    if (contents.hasDocuments) {
       next.push({
         key: "documents",
         label: "Documents",
-        count: docTotal,
-        path: documentsListPath(folder.name),
+        count: contents.docCount,
+        path: documentsListPath(folderName),
       });
     }
-    if (folder.hasPictures) {
+    if (contents.hasPictures) {
       next.push({
         key: "pictures",
         label: "Fotos",
-        count: picCount,
-        path: mediaCatalogPath("picture", folder.name, {
+        count: contents.picCount,
+        path: mediaCatalogPath("picture", folderName, {
           fromDocuments: true,
         }),
       });
     }
-    if (folder.hasVideos) {
+    if (contents.hasVideos) {
       next.push({
         key: "videos",
         label: "Vídeo",
-        count: vidCount,
-        path: mediaCatalogPath("video", folder.name, { fromDocuments: true }),
+        count: contents.vidCount,
+        path: mediaCatalogPath("video", folderName, { fromDocuments: true }),
       });
     }
     return next;
-  }, [folder, folderName, docTotal, picCount, vidCount]);
+  }, [contents, folderName]);
 
   const singleOptionPath = options.length === 1 ? options[0].path : null;
   const didAutoSkipRef = useRef(false);
