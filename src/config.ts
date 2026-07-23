@@ -11,6 +11,9 @@ const USER_TYPE_KEY = "acsa_user_type";
 const USER_ROLE_KEY = "acsa_user_role";
 const ADMIN_VIEW_MODE_KEY = "acsa_admin_view_mode";
 const USERNAME_KEY = "acsa_username";
+const THEME_KEY = "acsa_theme";
+
+export type ThemePreference = "light" | "dark";
 
 function runtimeConfig(): NonNullable<Window["__ACSA_CONFIG__"]> {
   return window.__ACSA_CONFIG__ ?? {};
@@ -117,6 +120,28 @@ export function setUsername(username: string): void {
 export function clearUsername(): void {
   try {
     localStorage.removeItem(USERNAME_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getTheme(): ThemePreference {
+  try {
+    const value = localStorage.getItem(THEME_KEY)?.trim();
+    if (value === "dark" || value === "light") return value;
+  } catch {
+    /* ignore */
+  }
+  return "light";
+}
+
+export function setTheme(theme: ThemePreference): void {
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+export function clearTheme(): void {
+  try {
+    localStorage.removeItem(THEME_KEY);
   } catch {
     /* ignore */
   }

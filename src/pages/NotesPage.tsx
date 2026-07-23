@@ -58,6 +58,12 @@ const MIN_W = 160;
 
 const MIN_H = 140;
 
+/** Approximate default post-it size (matches common API defaults / double-click offset). */
+
+const DEFAULT_NOTE_W = 220;
+
+const DEFAULT_NOTE_H = 160;
+
 
 
 /** Survives keep-alive hide/show and remounts within the same session. */
@@ -512,36 +518,6 @@ export function NotesPage() {
 
 
 
-  async function handleCreate(at?: { x: number; y: number }) {
-
-    const pos = at
-
-      ? { x: Math.max(0, at.x), y: Math.max(0, at.y) }
-
-      : undefined;
-
-    const note = await createNote(pos ?? {});
-
-    const placed = pos ? { ...note, ...pos } : note;
-
-    setNotes((prev) => [...prev, placed]);
-
-    if (
-
-      pos &&
-
-      (note.x !== pos.x || note.y !== pos.y)
-
-    ) {
-
-      schedulePersist(note.id, pos);
-
-    }
-
-  }
-
-
-
   function boardPointFromClient(clientX: number, clientY: number) {
 
     const board = boardRef.current;
@@ -557,6 +533,74 @@ export function NotesPage() {
       y: (clientY - rect.top) / zoom,
 
     };
+
+  }
+
+
+
+  /** Board coords so a note of the given size is centered in the visible viewport. */
+
+  function spawnPointAtViewportCenter(
+
+    noteW = DEFAULT_NOTE_W,
+
+    noteH = DEFAULT_NOTE_H,
+
+  ) {
+
+    const viewport = viewportRef.current;
+
+    if (!viewport) return { x: 0, y: 0 };
+
+    const rect = viewport.getBoundingClientRect();
+
+    const center = boardPointFromClient(
+
+      rect.left + rect.width / 2,
+
+      rect.top + rect.height / 2,
+
+    );
+
+    return {
+
+      x: Math.max(0, center.x - noteW / 2),
+
+      y: Math.max(0, center.y - noteH / 2),
+
+    };
+
+  }
+
+
+
+  async function handleCreate(at?: { x: number; y: number }) {
+
+    const fromViewport = !at;
+
+    let pos = at
+
+      ? { x: Math.max(0, at.x), y: Math.max(0, at.y) }
+
+      : spawnPointAtViewportCenter();
+
+    const note = await createNote(pos);
+
+    if (fromViewport) {
+
+      pos = spawnPointAtViewportCenter(note.width, note.height);
+
+    }
+
+    const placed = { ...note, ...pos };
+
+    setNotes((prev) => [...prev, placed]);
+
+    if (note.x !== pos.x || note.y !== pos.y) {
+
+      schedulePersist(note.id, pos);
+
+    }
 
   }
 

@@ -4,6 +4,7 @@ import { Layout } from "@/components/Layout";
 import { PersistentPages } from "@/components/PersistentPages";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ClassificadorJobProvider } from "@/contexts/ClassificadorJobContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import { LoginPage } from "@/pages/LoginPage";
 
 function AuthenticatedApp() {
@@ -35,8 +36,20 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
-        <AppRoutes />
+        <ThemeProvider>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 3000,
+              style: {
+                background: "var(--color-surface)",
+                color: "var(--color-text)",
+                border: "1px solid var(--color-border)",
+              },
+            }}
+          />
+          <AppRoutes />
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

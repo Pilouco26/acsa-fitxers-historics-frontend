@@ -5,6 +5,7 @@ import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { MoreNavMenu } from "@/components/MoreNavMenu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   ADMIN_VIEW_MODE_OPTIONS,
   type AdminViewMode,
@@ -24,8 +25,6 @@ const toolsNav = [
   { to: "/comparador", label: "Comparador" },
   { to: "/recuperacio", label: "Recuperació" },
 ];
-
-const settingsNavItem = { to: "/settings", label: "Configuració" };
 
 const adminOpsNav = [
   { to: "/settings", label: "Configuració" },
@@ -84,6 +83,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     viewMode,
     setViewMode,
   } = useAuth();
+  const { theme, setTheme } = useTheme();
   const { job, jobId, isActive, isStarting, cancel } = useClassificadorJob();
   const onClassificador = location.pathname === "/classificador";
   const showGlobalJobProgress = !onClassificador && isActive;
@@ -102,7 +102,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     : [
         {
           title: "Eines",
-          items: [...toolsNav, settingsNavItem],
+          items: toolsNav,
         },
       ];
 
@@ -167,6 +167,28 @@ export function Layout({ children }: { children: React.ReactNode }) {
           )}
         </nav>
         <div className="sidebar-footer">
+          {isAdmin ? (
+            <div
+              className="sidebar-theme-switch"
+              role="group"
+              aria-label="Mode de tema"
+            >
+              <button
+                type="button"
+                className={theme === "light" ? "active" : undefined}
+                onClick={() => setTheme("light")}
+              >
+                Clar
+              </button>
+              <button
+                type="button"
+                className={theme === "dark" ? "active" : undefined}
+                onClick={() => setTheme("dark")}
+              >
+                Fosc
+              </button>
+            </div>
+          ) : null}
           <MoreNavMenu sections={moreNavSections} onLogout={handleLogout} />
         </div>
       </aside>

@@ -37,6 +37,7 @@ const ROUTES: { path: string; Page: ComponentType }[] = [
 ];
 
 const ADMIN_ONLY_PATHS = new Set([
+  "/settings",
   "/admin/logs",
   "/admin/services",
   "/admin/jobs",
