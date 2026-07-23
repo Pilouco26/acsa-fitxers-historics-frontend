@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { PageHeader } from "@/components/PageHeader";
 import {
@@ -12,12 +14,21 @@ function successMessage(kinds: ClassificadorContentKind[]): string {
     return "Anàlisi de documents i mitjans completada. Reviseu els resultats a la pestanya Revisió.";
   }
   if (hasMedia) {
-    return "Anàlisi i assignació de carpetes completades. Reviseu-los a la pestanya Revisió.";
+    return "Anàlisi completada i carpetes de destinació calculades. Reviseu-los a la pestanya Revisió.";
   }
   return "Anàlisi i assignació completades. Reviseu els documents a la pestanya Revisió.";
 }
 
+/** Prefer documents when both kinds finished; otherwise the sole completed kind. */
+function revisioPanelForKinds(
+  kinds: ClassificadorContentKind[],
+): ClassificadorContentKind {
+  return kinds.includes("documents") ? "documents" : "media";
+}
+
 export function ClassificadorPage() {
+  const navigate = useNavigate();
+  const navigatedForJobRef = useRef<string | null>(null);
   const {
     job,
     jobId,
@@ -37,6 +48,14 @@ export function ClassificadorPage() {
   const emptyInbox =
     error === "No hi ha documents ni mitjans nous per processar.";
 
+  useEffect(() => {
+    if (!showSuccess || !jobId) return;
+    if (navigatedForJobRef.current === jobId) return;
+    navigatedForJobRef.current = jobId;
+    const panel = revisioPanelForKinds(completedKinds);
+    navigate(`/revisio?kind=${panel}`);
+  }, [showSuccess, jobId, completedKinds, navigate]);
+
   return (
     <>
       <PageHeader
@@ -52,7 +71,7 @@ export function ClassificadorPage() {
           {authError ? (
             <>
               <strong>Sessió no autoritzada</strong>
-              <p style={{ margin: "0.5rem 0 0" }}>
+              <p className="classificador-intro">
                 La vostra sessió ha caducat o no és vàlida. Torneu a iniciar
                 sessió.
               </p>
@@ -63,21 +82,21 @@ export function ClassificadorPage() {
         </div>
       )}
 
-      <div className="card">
-        <p style={{ margin: "0 0 1rem", color: "var(--color-text-secondary)" }}>
+      <div className="card classificador-card">
+        <p className="classificador-intro">
           Prem el botó per analitzar els PDF i els mitjans nous. Es processaran
-          només els tipus que hi hagi pendents. L'OCR i Gemini poden trigar uns
+          només els tipus que hi hagi pendents. L&apos;OCR i Gemini poden trigar uns
           minuts.
         </p>
 
-        <div className="btn-row" style={{ marginTop: 0 }}>
+        <div className="btn-row">
           <button
             type="button"
             className="btn btn-primary"
             disabled={busy}
             onClick={() => startAnalyze()}
           >
-            Processar safata d'entrada
+            Processar safata d&apos;entrada
           </button>
         </div>
 
@@ -93,19 +112,19 @@ export function ClassificadorPage() {
         )}
 
         {activeJobKind === "documents" && isAssigning && (
-          <div className="job-status" style={{ marginTop: "1rem" }}>
+          <div className="job-status job-status--followup">
             <strong>Estat:</strong> Assignant documents…
           </div>
         )}
 
         {activeJobKind === "media" && isRouting && (
-          <div className="job-status" style={{ marginTop: "1rem" }}>
+          <div className="job-status job-status--followup">
             <strong>Estat:</strong> Calculant carpetes de destinació…
           </div>
         )}
 
         {showSuccess && (
-          <div className="alert alert-success" style={{ marginTop: "1rem" }}>
+          <div className="alert alert-success">
             {successMessage(completedKinds)}
           </div>
         )}

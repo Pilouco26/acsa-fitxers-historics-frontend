@@ -10,6 +10,7 @@ import {
 } from "@/api/client";
 import type { AdminService, ServiceHealth, ServiceStatus } from "@/api/types";
 import { PageHeader } from "@/components/PageHeader";
+import { PanelEmptyActions, PanelLoading } from "@/components/PanelStatus";
 
 function statusBadgeClass(status: ServiceStatus): string {
   if (status === "running") return "badge-ok";
@@ -179,10 +180,10 @@ export function AdminServicesPage() {
 
       <div className="card table-list-body">
         {servicesQuery.isLoading && (
-          <p className="empty-state">Carregant serveis…</p>
+          <PanelLoading label="Carregant serveis…" />
         )}
         {!servicesQuery.isLoading && !services.length && !errorMessage && (
-          <p className="empty-state">No hi ha serveis configurats.</p>
+          <PanelEmptyActions title="No hi ha serveis configurats." />
         )}
         {services.length > 0 && (
           <table className="data-table data-table--list">

@@ -10,6 +10,7 @@ import {
 } from "@/api/client";
 import type { JobStatus } from "@/api/types";
 import { PageHeader } from "@/components/PageHeader";
+import { PanelEmptyActions, PanelLoading } from "@/components/PanelStatus";
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "Tots" },
@@ -135,10 +136,10 @@ export function AdminJobsPage() {
 
       <div className="card table-list-body">
         {jobsQuery.isLoading && (
-          <p className="empty-state">Carregant treballs…</p>
+          <PanelLoading label="Carregant treballs…" />
         )}
         {!jobsQuery.isLoading && !items.length && !errorMessage && (
-          <p className="empty-state">No hi ha treballs per a aquest filtre.</p>
+          <PanelEmptyActions title="No hi ha treballs per a aquest filtre." />
         )}
         {items.length > 0 && (
           <table className="data-table data-table--list">

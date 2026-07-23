@@ -111,10 +111,10 @@ export function JobProgressPanel({ job, onCancel }: JobProgressPanelProps) {
       </div>
       {progress.total > 0 && (
         <>
-          <div style={{ marginTop: "0.5rem" }}>
+          <div className="job-status__line">
             {progress.processed} / {progress.total} fitxers
             {progress.current_file && (
-              <span style={{ color: "var(--color-text-secondary)" }}>
+              <span className="text-secondary">
                 {" "}
                 — {progress.current_file}
               </span>
@@ -131,28 +131,26 @@ export function JobProgressPanel({ job, onCancel }: JobProgressPanelProps) {
       {(status === "pending" || status === "running") &&
         typeof etaSeconds === "number" &&
         Number.isFinite(etaSeconds) && (
-          <div style={{ marginTop: "0.5rem", color: "var(--color-text-secondary)" }}>
+          <div className="job-status__line--muted">
             Temps estimat restant: {formatDuration(etaSeconds)}
           </div>
         )}
       {progress.message && status !== "completed" && (
-        <div style={{ marginTop: "0.5rem" }}>
+        <div className="job-status__line">
           {translateJobMessage(progress.message)}
         </div>
       )}
       {Object.keys(progress.status_counts).length > 0 && (
-        <div style={{ marginTop: "0.5rem", fontSize: "0.8125rem" }}>
+        <div className="job-status__counts">
           {Object.entries(progress.status_counts).map(([k, v]) => (
-            <span key={k} style={{ marginRight: "1rem" }}>
+            <span key={k}>
               {translateDocumentStatus(k)}: {v}
             </span>
           ))}
         </div>
       )}
       {error && (
-        <div className="alert alert-error" style={{ marginTop: "0.75rem" }}>
-          {error}
-        </div>
+        <div className="alert alert-error alert--followup">{error}</div>
       )}
       {onCancel && (status === "pending" || status === "running") && (
         <div className="btn-row">

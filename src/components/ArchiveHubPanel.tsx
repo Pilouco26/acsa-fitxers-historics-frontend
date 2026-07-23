@@ -13,6 +13,9 @@ import {
   renameFolder,
 } from "@/api/client";
 import type { FolderRoot } from "@/api/types";
+import { AppDialog } from "@/components/AppDialog";
+import { HubBackButton } from "@/components/HubBackButton";
+import { PanelEmptyActions, PanelLoading } from "@/components/PanelStatus";
 import { useAuth } from "@/contexts/AuthContext";
 import { DOCUMENT_STATUS_OK } from "@/constants/globals";
 import {
@@ -25,7 +28,6 @@ import {
   mediaCatalogPath,
 } from "@/constants/folders";
 import { includesFolded } from "@/utils/foldSearchText";
-import { HubBackButton } from "@/components/HubBackButton";
 
 export type HubFolderCapabilities = {
   name: string;
@@ -170,14 +172,8 @@ function useHubFolders() {
 
   // Names only on the hub. Content (docs / fotos / vídeos) is probed when a
   // folder is opened — probing every folder up-front floods Docker / slow APIs.
-  // Empty probe sets hide badges until the pick screen loads real contents.
   const folders = useMemo(
-    () =>
-      mergeFolderBubbles(archiveFolderNames, mediaFolderNames, {
-        documentFolders: [],
-        pictureFolders: [],
-        videoFolders: [],
-      }),
+    () => mergeFolderBubbles(archiveFolderNames, mediaFolderNames),
     [archiveFolderNames, mediaFolderNames],
   );
 
@@ -235,22 +231,6 @@ function useFolderContents(folderName: string, enabled = true) {
   });
 }
 
-function FolderContentBadges({ folder }: { folder: HubFolderCapabilities }) {
-  if (!folder.hasDocuments && !folder.hasPictures && !folder.hasVideos) {
-    return null;
-  }
-
-  return (
-    <span className="archive-hub-card-badges">
-      {folder.hasDocuments && (
-        <span className="archive-hub-badge">Documents</span>
-      )}
-      {folder.hasPictures && <span className="archive-hub-badge">Fotos</span>}
-      {folder.hasVideos && <span className="archive-hub-badge">Vídeo</span>}
-    </span>
-  );
-}
-
 function FolderCardIcon() {
   return (
     <svg
@@ -271,6 +251,86 @@ function FolderCardIcon() {
   );
 }
 
+type ArchiveHubFolderCardProps = {
+  folder: HubFolderCapabilities;
+  menuOpen: boolean;
+  busy: boolean;
+  onOpen: () => void;
+  onToggleMenu: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+};
+
+/** Folder card with always-visible ⋯ (open menu closes if card scrolls under sticky search). */
+function ArchiveHubFolderCard({
+  folder,
+  menuOpen,
+  busy,
+  onOpen,
+  onToggleMenu,
+  onRename,
+  onDelete,
+}: ArchiveHubFolderCardProps) {
+  return (
+    <div
+      className="archive-hub-card-wrap"
+      role="listitem"
+      data-folder-name={folder.name}
+      data-folder-menu={menuOpen ? "" : undefined}
+    >
+      <button
+        type="button"
+        className="archive-hub-card"
+        title={folder.name}
+        disabled={busy}
+        onClick={onOpen}
+      >
+        <FolderCardIcon />
+        <span className="archive-hub-card-body">
+          <span className="archive-hub-card-label">{folder.name}</span>
+        </span>
+      </button>
+      <div className="archive-hub-card-menu">
+        <button
+          type="button"
+          className="archive-hub-card-menu-trigger"
+          aria-label={`Accions per a ${folder.name}`}
+          aria-expanded={menuOpen}
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMenu();
+          }}
+        >
+          ⋯
+        </button>
+        {menuOpen && (
+          <div className="archive-hub-card-menu-popover" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              className="archive-hub-card-menu-item"
+              disabled={busy}
+              onClick={onRename}
+            >
+              Canviar el nom
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="archive-hub-card-menu-item archive-hub-card-menu-item--danger"
+              disabled={busy}
+              onClick={onDelete}
+            >
+              Eliminar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type ArchiveHubPanelProps = {
   /** Scroll offset to restore when the bubble grid remounts. */
   initialScrollTop?: number;
@@ -281,9 +341,7 @@ type ArchiveHubPanelProps = {
   onSearchFilterChange?: (value: string) => void;
 };
 
-function promptFolderName(message: string, initial = ""): string | null {
-  const raw = window.prompt(message, initial);
-  if (raw == null) return null;
+function validateFolderNameInput(raw: string): string | null {
   const name = raw.trim();
   if (!name) {
     toast.error("El nom de la carpeta no pot estar buit.");
@@ -310,6 +368,13 @@ export function ArchiveHubPanel({
   const { folders, isLoading, apiMode, archiveNameSet, mediaNameSet } =
     useHubFolders();
   const [menuFolder, setMenuFolder] = useState<string | null>(null);
+  const [nameDialog, setNameDialog] = useState<
+    null | { mode: "create" } | { mode: "rename"; fromName: string }
+  >(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [deleteDialog, setDeleteDialog] = useState<
+    null | { name: string; force: boolean }
+  >(null);
   const filteredFolders = useMemo(() => {
     const query = searchFilter.trim();
     if (!query) return folders;
@@ -318,8 +383,10 @@ export function ArchiveHubPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialScrollTopRef = useRef(initialScrollTop);
   const onScrollTopChangeRef = useRef(onScrollTopChange);
+  const menuFolderRef = useRef(menuFolder);
   initialScrollTopRef.current = initialScrollTop;
   onScrollTopChangeRef.current = onScrollTopChange;
+  menuFolderRef.current = menuFolder;
 
   const modeOpts = apiMode ? { mode: apiMode } : {};
 
@@ -355,13 +422,17 @@ export function ArchiveHubPanel({
       if (created === 0) {
         throw new Error(errors[0] ?? "No s'ha pogut crear la carpeta.");
       }
-      if (errors.length > 0) {
-        throw new Error(errors.join(" · "));
-      }
+      return {
+        warning: errors.length > 0 ? errors.join(" · ") : null,
+      };
     },
-    onSuccess: () => {
-      toast.success("Carpeta creada");
+    onSuccess: (result) => {
       invalidateFolderQueries();
+      if (result.warning) {
+        toast.error(`Carpeta creada parcialment: ${result.warning}`);
+      } else {
+        toast.success("Carpeta creada");
+      }
     },
     onError: (err) => {
       toast.error(
@@ -383,6 +454,7 @@ export function ArchiveHubPanel({
         throw new Error("No s'ha trobat la carpeta.");
       }
       const errors: string[] = [];
+      let renamed = 0;
       for (const root of roots) {
         try {
           await renameFolder(
@@ -394,23 +466,28 @@ export function ArchiveHubPanel({
             },
             { quiet: true },
           );
+          renamed += 1;
         } catch (err) {
           errors.push(
             `${root}: ${err instanceof Error ? err.message : "Error"}`,
           );
         }
       }
-      if (errors.length === roots.length) {
+      if (renamed === 0) {
         throw new Error(errors[0] ?? "No s'ha pogut reanomenar.");
       }
-      if (errors.length > 0) {
-        throw new Error(errors.join(" · "));
-      }
+      return {
+        warning: errors.length > 0 ? errors.join(" · ") : null,
+      };
     },
-    onSuccess: () => {
-      toast.success("Carpeta reanomenada");
+    onSuccess: (result) => {
       invalidateFolderQueries();
       setMenuFolder(null);
+      if (result.warning) {
+        toast.error(`Carpeta reanomenada parcialment: ${result.warning}`);
+      } else {
+        toast.success("Carpeta reanomenada");
+      }
     },
     onError: (err) => {
       toast.error(
@@ -460,18 +537,22 @@ export function ArchiveHubPanel({
       if (deleted === 0) {
         throw new Error(errors[0] ?? "No s'ha pogut eliminar la carpeta.");
       }
-      if (errors.length > 0 || notEmptyRoots.length > 0) {
-        throw new Error(
-          [...errors, ...notEmptyRoots.map((r) => `${r}: no buida`)].join(
-            " · ",
-          ),
-        );
-      }
+      const warningParts = [
+        ...errors,
+        ...notEmptyRoots.map((r) => `${r}: no buida`),
+      ];
+      return {
+        warning: warningParts.length > 0 ? warningParts.join(" · ") : null,
+      };
     },
-    onSuccess: () => {
-      toast.success("Carpeta eliminada");
+    onSuccess: (result) => {
       invalidateFolderQueries();
       setMenuFolder(null);
+      if (result.warning) {
+        toast.error(`Carpeta eliminada parcialment: ${result.warning}`);
+      } else {
+        toast.success("Carpeta eliminada");
+      }
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 409) return;
@@ -486,54 +567,75 @@ export function ArchiveHubPanel({
     renameMutation.isPending ||
     deleteMutation.isPending;
 
-  const handleCreateFolder = () => {
-    const name = promptFolderName("Nom de la nova carpeta:");
-    if (!name) return;
-    const exists =
-      archiveNameSet.has(name) ||
-      mediaNameSet.has(name) ||
-      folders.some(
-        (f) => f.name.localeCompare(name, "ca", { sensitivity: "base" }) === 0,
-      );
-    if (exists) {
-      toast.error(`La carpeta «${name}» ja existeix.`);
-      return;
-    }
-    createMutation.mutate(name);
+  const openCreateDialog = () => {
+    setMenuFolder(null);
+    setNameDraft("");
+    setNameDialog({ mode: "create" });
   };
 
-  const handleRenameFolder = (fromName: string) => {
-    const toName = promptFolderName("Nou nom de la carpeta:", fromName);
-    if (!toName) return;
-    if (toName === fromName) {
-      setMenuFolder(null);
+  const openRenameDialog = (fromName: string) => {
+    setMenuFolder(null);
+    setNameDraft(fromName);
+    setNameDialog({ mode: "rename", fromName });
+  };
+
+  const openDeleteDialog = (name: string) => {
+    setMenuFolder(null);
+    setDeleteDialog({ name, force: false });
+  };
+
+  const submitNameDialog = () => {
+    if (!nameDialog) return;
+    const name = validateFolderNameInput(nameDraft);
+    if (!name) return;
+
+    if (nameDialog.mode === "create") {
+      const exists =
+        archiveNameSet.has(name) ||
+        mediaNameSet.has(name) ||
+        folders.some(
+          (f) =>
+            f.name.localeCompare(name, "ca", { sensitivity: "base" }) === 0,
+        );
+      if (exists) {
+        toast.error(`La carpeta «${name}» ja existeix.`);
+        return;
+      }
+      setNameDialog(null);
+      createMutation.mutate(name);
+      return;
+    }
+
+    const fromName = nameDialog.fromName;
+    if (name === fromName) {
+      setNameDialog(null);
       return;
     }
     const conflict =
-      (archiveNameSet.has(toName) || mediaNameSet.has(toName)) &&
-      toName.localeCompare(fromName, "ca", { sensitivity: "base" }) !== 0;
+      (archiveNameSet.has(name) || mediaNameSet.has(name)) &&
+      name.localeCompare(fromName, "ca", { sensitivity: "base" }) !== 0;
     if (conflict) {
-      toast.error(`Ja existeix una carpeta anomenada «${toName}».`);
+      toast.error(`Ja existeix una carpeta anomenada «${name}».`);
       return;
     }
-    renameMutation.mutate({ fromName, toName });
+    setNameDialog(null);
+    renameMutation.mutate({ fromName, toName: name });
   };
 
-  const handleDeleteFolder = (name: string) => {
-    const emptyOk = window.confirm(
-      `Voleu eliminar la carpeta «${name}»?\n\nNomés s'eliminarà si està buida.`,
-    );
-    if (!emptyOk) return;
+  const submitDeleteDialog = () => {
+    if (!deleteDialog) return;
+    const { name, force } = deleteDialog;
     deleteMutation.mutate(
-      { name, force: false },
+      { name, force },
       {
+        onSuccess: () => setDeleteDialog(null),
         onError: (err) => {
-          if (!(err instanceof ApiError) || err.status !== 409) return;
-          const forceOk = window.confirm(
-            `La carpeta «${name}» no està buida.\n\nVoleu eliminar-la amb tot el contingut? Aquesta acció no es pot desfer fàcilment.`,
-          );
-          if (forceOk) {
-            deleteMutation.mutate({ name, force: true });
+          if (!force && err instanceof ApiError && err.status === 409) {
+            setDeleteDialog({ name, force: true });
+            return;
+          }
+          if (!(err instanceof ApiError && err.status === 409)) {
+            setDeleteDialog(null);
           }
         },
       },
@@ -560,6 +662,60 @@ export function ArchiveHubPanel({
       el.removeEventListener("scroll", handleScroll);
     };
   }, []);
+
+  // One observer for all cards: close open ⋯ menu when that card scrolls under sticky search.
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root || filteredFolders.length === 0) return;
+
+    const searchEl = root.querySelector(".archive-hub-search");
+    let topInset =
+      searchEl instanceof HTMLElement ? searchEl.offsetHeight : 0;
+    let observer: IntersectionObserver | null = null;
+
+    const connect = () => {
+      observer?.disconnect();
+      observer = new IntersectionObserver(
+        (entries) => {
+          const open = menuFolderRef.current;
+          if (!open) return;
+          for (const entry of entries) {
+            const name = (entry.target as HTMLElement).dataset.folderName;
+            if (name === open && !entry.isIntersecting) {
+              setMenuFolder(null);
+              break;
+            }
+          }
+        },
+        {
+          root,
+          rootMargin: `-${topInset}px 0px 0px 0px`,
+          threshold: 0,
+        },
+      );
+      for (const el of root.querySelectorAll("[data-folder-name]")) {
+        observer.observe(el);
+      }
+    };
+
+    connect();
+
+    const ro =
+      searchEl instanceof HTMLElement
+        ? new ResizeObserver(() => {
+            const next = searchEl.offsetHeight;
+            if (next === topInset) return;
+            topInset = next;
+            connect();
+          })
+        : null;
+    if (searchEl instanceof HTMLElement) ro?.observe(searchEl);
+
+    return () => {
+      observer?.disconnect();
+      ro?.disconnect();
+    };
+  }, [filteredFolders.length, isLoading]);
 
   useEffect(() => {
     if (!menuFolder) return;
@@ -620,87 +776,35 @@ export function ArchiveHubPanel({
         )}
 
         <div className="archive-hub-cards">
-          {isLoading && <p className="empty-state">Carregant carpetes…</p>}
+          {isLoading && <PanelLoading label="Carregant carpetes…" />}
 
           {!isLoading && folders.length === 0 && (
-            <p className="empty-state">No hi ha carpetes disponibles.</p>
+            <PanelEmptyActions title="No hi ha carpetes disponibles." />
           )}
 
           {!isLoading && folders.length > 0 && filteredFolders.length === 0 && (
-            <p className="empty-state">Cap carpeta coincideix amb la cerca.</p>
+            <PanelEmptyActions title="Cap carpeta coincideix amb la cerca." />
           )}
 
           {!isLoading && filteredFolders.length > 0 && (
             <div className="archive-hub-card-grid" role="list">
               {filteredFolders.map((folder) => (
-                <div
+                <ArchiveHubFolderCard
                   key={folder.name}
-                  className="archive-hub-card-wrap"
-                  role="listitem"
-                  data-folder-menu={
-                    menuFolder === folder.name ? "" : undefined
+                  folder={folder}
+                  menuOpen={menuFolder === folder.name}
+                  busy={busy}
+                  onOpen={() =>
+                    navigate(documentsFolderPickPath(folder.name))
                   }
-                >
-                  <button
-                    type="button"
-                    className="archive-hub-card"
-                    title={folder.name}
-                    disabled={busy}
-                    onClick={() =>
-                      navigate(documentsFolderPickPath(folder.name))
-                    }
-                  >
-                    <FolderCardIcon />
-                    <span className="archive-hub-card-body">
-                      <span className="archive-hub-card-label">
-                        {folder.name}
-                      </span>
-                      <FolderContentBadges folder={folder} />
-                    </span>
-                  </button>
-                  <div className="archive-hub-card-menu">
-                    <button
-                      type="button"
-                      className="archive-hub-card-menu-trigger"
-                      aria-label={`Accions per a ${folder.name}`}
-                      aria-expanded={menuFolder === folder.name}
-                      disabled={busy}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMenuFolder((prev) =>
-                          prev === folder.name ? null : folder.name,
-                        );
-                      }}
-                    >
-                      ⋯
-                    </button>
-                    {menuFolder === folder.name && (
-                      <div
-                        className="archive-hub-card-menu-popover"
-                        role="menu"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="archive-hub-card-menu-item"
-                          disabled={busy}
-                          onClick={() => handleRenameFolder(folder.name)}
-                        >
-                          Canviar el nom
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="archive-hub-card-menu-item archive-hub-card-menu-item--danger"
-                          disabled={busy}
-                          onClick={() => handleDeleteFolder(folder.name)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  onToggleMenu={() =>
+                    setMenuFolder((prev) =>
+                      prev === folder.name ? null : folder.name,
+                    )
+                  }
+                  onRename={() => openRenameDialog(folder.name)}
+                  onDelete={() => openDeleteDialog(folder.name)}
+                />
               ))}
             </div>
           )}
@@ -712,7 +816,7 @@ export function ArchiveHubPanel({
           type="button"
           className="btn btn-primary"
           disabled={busy}
-          onClick={handleCreateFolder}
+          onClick={openCreateDialog}
         >
           {createMutation.isPending ? "Creant…" : "Nova carpeta"}
         </button>
@@ -739,9 +843,99 @@ export function ArchiveHubPanel({
             navigate(mediaCatalogPath("video", null, { fromDocuments: true }))
           }
         >
-          Veure videos
+          Veure vídeos
         </button>
       </div>
+
+      <AppDialog
+        open={nameDialog != null}
+        title={
+          nameDialog?.mode === "rename"
+            ? "Canviar el nom de la carpeta"
+            : "Nova carpeta"
+        }
+        onClose={() => setNameDialog(null)}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setNameDialog(null)}
+            >
+              Cancel·lar
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={submitNameDialog}
+            >
+              {nameDialog?.mode === "rename" ? "Desar" : "Crear"}
+            </button>
+          </>
+        }
+      >
+        <div className="field">
+          <label htmlFor="hub-folder-name">Nom</label>
+          <input
+            id="hub-folder-name"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submitNameDialog();
+              }
+            }}
+            autoComplete="off"
+          />
+        </div>
+      </AppDialog>
+
+      <AppDialog
+        open={deleteDialog != null}
+        title={
+          deleteDialog?.force
+            ? "Eliminar carpeta amb contingut?"
+            : "Eliminar carpeta?"
+        }
+        onClose={() => setDeleteDialog(null)}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setDeleteDialog(null)}
+            >
+              Cancel·lar
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={busy}
+              onClick={submitDeleteDialog}
+            >
+              {deleteMutation.isPending
+                ? "Eliminant…"
+                : deleteDialog?.force
+                  ? "Eliminar tot"
+                  : "Eliminar"}
+            </button>
+          </>
+        }
+      >
+        {deleteDialog?.force ? (
+          <p>
+            La carpeta «{deleteDialog.name}» no està buida. Voleu eliminar-la
+            amb tot el contingut? Aquesta acció no es pot desfer fàcilment.
+          </p>
+        ) : (
+          <p>
+            Voleu eliminar la carpeta «{deleteDialog?.name}»? Només
+            s&apos;eliminarà si està buida.
+          </p>
+        )}
+      </AppDialog>
     </div>
   );
 }
@@ -865,12 +1059,10 @@ export function ArchiveFolderPickPanel({
       <div className="panel-with-back archive-hub-pick-with-back">
         <HubBackButton onClick={() => navigate("/documents")} />
         <div className="archive-hub-pick panel-with-back-body">
-          {isLoading && <p className="empty-state">Carregant…</p>}
+          {isLoading && <PanelLoading />}
 
           {!isLoading && options.length === 0 && (
-            <p className="empty-state">
-              Aquesta carpeta no té contingut disponible.
-            </p>
+            <PanelEmptyActions title="Aquesta carpeta no té contingut disponible." />
           )}
 
           {!isLoading && options.length > 0 && (

@@ -225,7 +225,7 @@ export function AnalisiPage() {
           </label>
         </div>
 
-        <div className="btn-row" style={{ marginTop: 0 }}>
+        <div className="btn-row btn-row--flush">
           <button
             type="button"
             className="btn btn-primary"
@@ -248,7 +248,7 @@ export function AnalisiPage() {
         />
 
         {job?.status === "completed" && (
-          <div className="alert alert-success" style={{ marginTop: "1rem" }}>
+          <div className="alert alert-success alert--followup">
             Anàlisi completada.
             {requireReview && " Reviseu els documents a la pestanya Revisió."}
           </div>

@@ -7,6 +7,7 @@ import {
   restoreDocument,
 } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PdfPreview, releaseDocumentPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,6 +21,7 @@ import {
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
 import type { DocumentOut } from "@/api/types";
+import { onRowKeyActivate } from "@/utils/rowActivation";
 
 function formatDeletedAt(value: string | null | undefined): string {
   if (!value) return "—";
@@ -43,6 +45,8 @@ export function RecuperacioPage() {
   const [selected, setSelected] = useState<DocumentOut | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewRotation, setPreviewRotation] = useState(0);
+  const [previewToolbarActionsHost, setPreviewToolbarActionsHost] =
+    useState<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const listCardRef = useRef<HTMLDivElement>(null);
@@ -200,12 +204,11 @@ export function RecuperacioPage() {
 
   const emptyRows = Math.max(0, pageSize - items.length);
 
-  const tableOverlayMessage =
-    isLoading || (isFetching && items.length === 0)
-      ? "Carregant…"
-      : items.length === 0
-        ? "No hi ha documents a _DELETED."
-        : null;
+  const isTableLoading = isLoading || (isFetching && items.length === 0);
+  const tableEmptyMessage =
+    !isTableLoading && items.length === 0
+      ? "No hi ha documents a _DELETED."
+      : null;
 
   return (
     <div className="page-fill">
@@ -236,9 +239,14 @@ export function RecuperacioPage() {
               ref={tableAreaRef}
               className="table-responsive table-responsive--no-scroll table-list-body"
             >
-              {tableOverlayMessage && (
+              {isTableLoading && (
+                <div className="table-list-overlay" role="status" aria-label="Carregant…">
+                  <LoadingSpinner label="Carregant…" statusRole={false} />
+                </div>
+              )}
+              {tableEmptyMessage && (
                 <p className="table-list-overlay" role="status">
-                  {tableOverlayMessage}
+                  {tableEmptyMessage}
                 </p>
               )}
               <table
@@ -258,8 +266,11 @@ export function RecuperacioPage() {
                     <tr
                       key={doc.id}
                       className={selected?.id === doc.id ? "selected" : undefined}
+                      tabIndex={0}
                       onClick={() => selectDoc(doc)}
-                      style={{ cursor: "pointer" }}
+                      onKeyDown={(e) =>
+                        onRowKeyActivate(e, () => selectDoc(doc))
+                      }
                     >
                       <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
                       <td>{doc.company_folder ?? "—"}</td>
@@ -347,10 +358,14 @@ export function RecuperacioPage() {
             </div>
 
             <div className="card card-panel split-detail-preview">
-              <div className="toolbar-row" style={{ marginBottom: 0 }}>
-                <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
+              <div className="toolbar-row toolbar-row--flush">
+                <h3 className="card-title card-title--grow">
                   Vista prèvia
                 </h3>
+                <div
+                  ref={setPreviewToolbarActionsHost}
+                  className="pdf-preview-toolbar-actions-host"
+                />
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
@@ -366,6 +381,7 @@ export function RecuperacioPage() {
                 documentId={selected.id}
                 title={selected.proposed_name ?? selected.original_name ?? "PDF"}
                 rotation={previewRotation}
+                toolbarActionsHost={previewToolbarActionsHost}
               />
             </div>
           </>

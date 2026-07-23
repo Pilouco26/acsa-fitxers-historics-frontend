@@ -15,7 +15,7 @@ export function PlaceholderPage({
     <>
       <PageHeader title={title} description={description} />
       <div className="card">
-        <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
+        <p className="m-0 text-secondary">
           Aquesta funcionalitat encara no està disponible al frontend.
           {endpoint && (
             <>

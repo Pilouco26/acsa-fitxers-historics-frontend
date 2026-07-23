@@ -1,20 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
-type NavItem = { to: string; label: string };
+type NavItem = {
+  to: string;
+  label: string;
+  badgeKey?: "revisio";
+};
+
 type NavSection = { title: string; items: NavItem[] };
 
 type MoreNavMenuProps = {
   sections: NavSection[];
   onLogout?: () => void;
-  /** Admin-only visual controls (data mode + theme), shown under "Visual". */
+  /** Admin-only visual controls (data mode + theme). */
   visualControls?: ReactNode;
+  badgeCount?: number;
 };
 
 export function MoreNavMenu({
   sections,
   onLogout,
   visualControls,
+  badgeCount,
 }: MoreNavMenuProps) {
   const { pathname } = useLocation();
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -56,8 +63,10 @@ export function MoreNavMenu({
     setOpen(false);
   }, [pathname]);
 
+  const hasNav = sections.some((section) => section.items.length > 0);
+
   return (
-    <div className="more-nav" ref={wrapperRef}>
+    <div className={`more-nav${open ? " more-nav--open" : ""}`} ref={wrapperRef}>
       <button
         type="button"
         className={`more-nav-trigger${isActive ? " active" : ""}`}
@@ -65,41 +74,70 @@ export function MoreNavMenu({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        Més
+        <span className="more-nav-trigger-label">Més</span>
+        {badgeCount != null && badgeCount > 0 ? (
+          <span
+            className="nav-link-badge more-nav-trigger-badge"
+            aria-label={`${badgeCount} pendents`}
+          >
+            {badgeCount > 99 ? "99+" : badgeCount}
+          </span>
+        ) : null}
+        <span className="more-nav-trigger-chevron" aria-hidden="true" />
       </button>
 
       {open ? (
         <div className="more-nav-dropdown" role="menu" aria-label="Més opcions">
-          {sections.map((section) => (
-            <div key={section.title} className="nav-section">
-              <div className="nav-section-title">{section.title}</div>
-              {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  role="menuitem"
-                  className={({ isActive: linkActive }) =>
-                    `nav-link${linkActive ? " active" : ""}`
-                  }
-                  onClick={() => setOpen(false)}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+          {hasNav ? (
+            <div className="more-nav-body">
+              {sections.map((section) =>
+                section.items.length === 0 ? null : (
+                  <section key={section.title} className="more-nav-group">
+                    <h3 className="more-nav-group-title">{section.title}</h3>
+                    <div className="more-nav-link-grid">
+                      {section.items.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          role="menuitem"
+                          className={({ isActive: linkActive }) =>
+                            `more-nav-link${linkActive ? " active" : ""}`
+                          }
+                          onClick={() => setOpen(false)}
+                        >
+                          <span className="more-nav-link-label">{item.label}</span>
+                          {item.badgeKey === "revisio" &&
+                          badgeCount != null &&
+                          badgeCount > 0 ? (
+                            <span
+                              className="nav-link-badge"
+                              aria-label={`${badgeCount} pendents`}
+                            >
+                              {badgeCount > 99 ? "99+" : badgeCount}
+                            </span>
+                          ) : null}
+                        </NavLink>
+                      ))}
+                    </div>
+                  </section>
+                ),
+              )}
             </div>
-          ))}
+          ) : null}
+
           {visualControls ? (
-            <div className="nav-section more-nav-visual">
-              <div className="nav-section-title">Visual</div>
+            <div className="more-nav-prefs">
+              <h3 className="more-nav-group-title">Preferències</h3>
               {visualControls}
             </div>
           ) : null}
+
           {onLogout ? (
-            <div className="more-nav-logout">
+            <div className="more-nav-footer">
               <button
                 type="button"
                 role="menuitem"
-                className="nav-link more-nav-logout-btn"
+                className="more-nav-logout-btn"
                 onClick={() => {
                   setOpen(false);
                   onLogout();

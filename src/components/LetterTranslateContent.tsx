@@ -23,9 +23,7 @@ export function PagePlainContent({
   const blocks = dense ? denseLetterLines(text) : splitDocumentBlocks(text);
   if (blocks.length === 0) {
     return (
-      <p className="empty-state" style={{ padding: "1.25rem" }}>
-        (Pàgina sense text)
-      </p>
+      <p className="empty-state empty-state--compact">(Pàgina sense text)</p>
     );
   }
   return (
@@ -63,9 +61,7 @@ export function PageLetterContent({
           {section.text ? (
             <PagePlainContent text={section.text} dense={section.primary} />
           ) : (
-            <p className="empty-state" style={{ padding: "0.5rem 0" }}>
-              —
-            </p>
+            <p className="empty-state empty-state--inline">—</p>
           )}
         </section>
       ))}

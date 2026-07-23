@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   ApiError,
   deletePicture,
@@ -19,22 +20,45 @@ import {
   MediaPreview,
   releaseMediaPreview,
 } from "@/components/MediaPreview";
+import { AppDialog } from "@/components/AppDialog";
+import { PanelEmptyActions, PanelSkeletonList } from "@/components/PanelStatus";
+import { TablePagination } from "@/components/TablePagination";
 import {
   FOLDER_ROOT_ARCHIVE,
   FOLDER_ROOT_MEDIA,
 } from "@/constants/folders";
-import { DOCUMENT_STATUS_REVISIO } from "@/constants/globals";
+import {
+  DOCUMENT_LIST_PAGE_SIZE,
+  DOCUMENT_STATUS_REVISIO,
+} from "@/constants/globals";
 import { useAuth } from "@/contexts/AuthContext";
 import type { MediaKind, PictureOut, VideoOut } from "@/api/types";
 import { buildArchiveFolderSuggestions } from "@/utils/folderSuggestions";
+import {
+  applyListPanelFit,
+  clearListPanelFit,
+  fitListPanelLayout,
+  measureListPanelChrome,
+} from "@/utils/listPanelLayout";
+import { onRowKeyActivate } from "@/utils/rowActivation";
 
 const MEDIA_QUARANTINE_FOLDER = "_PENDENTS";
+const MEDIA_LIST_LIMIT = 200;
 
 type MediaItem = (PictureOut | VideoOut) & { kind: MediaKind };
 
 type SelectedMedia = {
   kind: MediaKind;
   item: PictureOut | VideoOut;
+};
+
+type EditSnapshot = {
+  name: string;
+  folder: string;
+  suggestedFolder: string;
+  date: string;
+  summary: string;
+  location: string;
 };
 
 function displayName(item: PictureOut | VideoOut): string {
@@ -61,9 +85,18 @@ function foldersMatch(a: string, b: string): boolean {
 
 export function MediaReviewPanel() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const pageActive = location.pathname === "/revisio";
+  const wasPageActiveRef = useRef(pageActive);
   const { apiMode, isAdmin } = useAuth();
   const [selected, setSelected] = useState<SelectedMedia | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const selectedKeyRef = useRef<string | null>(null);
+  const listCardRef = useRef<HTMLDivElement>(null);
+  const tableAreaRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DOCUMENT_LIST_PAGE_SIZE);
 
   const [editName, setEditName] = useState("");
   const [editFolder, setEditFolder] = useState("");
@@ -72,17 +105,28 @@ export function MediaReviewPanel() {
   const [editSummary, setEditSummary] = useState("");
   const [editLocation, setEditLocation] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [pendingNewFolder, setPendingNewFolder] = useState<string | null>(null);
+  const [pendingDiscard, setPendingDiscard] = useState(false);
 
   const picturesQuery = useQuery({
     queryKey: ["pictures", DOCUMENT_STATUS_REVISIO],
     queryFn: () =>
-      listPictures({ status: DOCUMENT_STATUS_REVISIO, limit: 50 }),
+      listPictures({ status: DOCUMENT_STATUS_REVISIO, limit: MEDIA_LIST_LIMIT }),
   });
 
   const videosQuery = useQuery({
     queryKey: ["videos", DOCUMENT_STATUS_REVISIO],
-    queryFn: () => listVideos({ status: DOCUMENT_STATUS_REVISIO, limit: 50 }),
+    queryFn: () =>
+      listVideos({ status: DOCUMENT_STATUS_REVISIO, limit: MEDIA_LIST_LIMIT }),
   });
+
+  useEffect(() => {
+    const becameActive = pageActive && !wasPageActiveRef.current;
+    wasPageActiveRef.current = pageActive;
+    if (!becameActive) return;
+    void picturesQuery.refetch();
+    void videosQuery.refetch();
+  }, [pageActive, picturesQuery.refetch, videosQuery.refetch]);
 
   const archiveFoldersQuery = useQuery({
     queryKey: ["folders", FOLDER_ROOT_ARCHIVE, apiMode ?? "ALL"],
@@ -141,12 +185,74 @@ export function MediaReviewPanel() {
     (picturesQuery.data?.total ?? 0) + (videosQuery.data?.total ?? 0);
   const isLoading = picturesQuery.isLoading || videosQuery.isLoading;
   const isFetching = picturesQuery.isFetching || videosQuery.isFetching;
+  const listError =
+    picturesQuery.isError || videosQuery.isError
+      ? picturesQuery.error instanceof ApiError
+        ? picturesQuery.error.message
+        : videosQuery.error instanceof ApiError
+          ? videosQuery.error.message
+          : "Error en carregar els mitjans pendents de revisió."
+      : null;
 
+  const pageItems = useMemo(
+    () => items.slice(page * pageSize, page * pageSize + pageSize),
+    [items, page, pageSize],
+  );
+  const emptyRows = Math.max(0, pageSize - pageItems.length);
   const detailVisible = Boolean(selected && detailOpen);
   const selectedItem = selected?.item ?? null;
   const selectedKind = selected?.kind ?? "picture";
 
+  useEffect(() => {
+    if (detailVisible) return;
+
+    const cardEl = listCardRef.current;
+    const tableEl = tableAreaRef.current;
+    if (!cardEl || !tableEl) return;
+
+    const compute = () => {
+      window.requestAnimationFrame(() => {
+        const available =
+          cardEl.getBoundingClientRect().height -
+          measureListPanelChrome(cardEl, tableEl);
+        const fit = fitListPanelLayout(available);
+        applyListPanelFit(tableEl, fit);
+        setPageSize((prev) => (prev === fit.pageSize ? prev : fit.pageSize));
+      });
+    };
+
+    const raf = window.requestAnimationFrame(() => compute());
+    const ro = new ResizeObserver(() => compute());
+    ro.observe(cardEl);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
+      clearListPanelFit(tableEl);
+    };
+  }, [detailVisible, isLoading, isFetching]);
+
+  useEffect(() => {
+    if (items.length <= 0) return;
+    const maxPage = Math.max(0, Math.ceil(items.length / pageSize) - 1);
+    if (page > maxPage) setPage(maxPage);
+  }, [items.length, page, pageSize]);
+
+  function restoreDetail(sel: SelectedMedia, edits: EditSnapshot) {
+    selectedKeyRef.current = `${sel.kind}:${sel.item.id}`;
+    setSelected(sel);
+    setEditName(edits.name);
+    setEditFolder(edits.folder);
+    setSuggestedFolder(edits.suggestedFolder);
+    setEditDate(edits.date);
+    setEditSummary(edits.summary);
+    setEditLocation(edits.location);
+    setDetailOpen(true);
+  }
+
   function selectItem(item: MediaItem) {
+    const key = `${item.kind}:${item.id}`;
+    selectedKeyRef.current = key;
     setSelected({ kind: item.kind, item });
     setEditName(item.proposed_name ?? "");
     const current = mediaFolder(item);
@@ -162,6 +268,7 @@ export function MediaReviewPanel() {
     if (!initialFolder) {
       void guessMediaRoute(item.id, item.kind)
         .then((guess) => {
+          if (selectedKeyRef.current !== key) return;
           const folder = guess.dest_folder?.trim();
           if (!folder || folder === MEDIA_QUARANTINE_FOLDER) return;
           setSuggestedFolder(folder);
@@ -238,6 +345,7 @@ export function MediaReviewPanel() {
     },
     onSuccess: () => {
       invalidateMediaQueries();
+      selectedKeyRef.current = null;
       setSelected(null);
       setDetailOpen(false);
       setError(null);
@@ -287,6 +395,7 @@ export function MediaReviewPanel() {
         : deletePicture(sel.item.id),
     onSuccess: () => {
       invalidateMediaQueries();
+      selectedKeyRef.current = null;
       setSelected(null);
       setDetailOpen(false);
       setError(null);
@@ -309,6 +418,38 @@ export function MediaReviewPanel() {
     await releaseMediaPreview(sel.kind, sel.item.id);
   }
 
+  async function runApprove(useGuess: boolean, destFolder: string) {
+    if (!selected) return;
+
+    const sel = selected;
+    const edits: EditSnapshot = {
+      name: editName,
+      folder: editFolder,
+      suggestedFolder,
+      date: editDate,
+      summary: editSummary,
+      location: editLocation,
+    };
+    const body = patchBody();
+    setError(null);
+    setPendingNewFolder(null);
+
+    try {
+      await forceCloseMediaPreview(sel);
+      await approveMutation.mutateAsync({
+        sel,
+        body,
+        destFolder: useGuess ? undefined : destFolder,
+        useGuess,
+      });
+    } catch (err) {
+      restoreDetail(sel, edits);
+      if (!(err instanceof ApiError)) {
+        setError("Error en aprovar");
+      }
+    }
+  }
+
   async function handleApprove() {
     if (!selected) return;
 
@@ -328,46 +469,38 @@ export function MediaReviewPanel() {
         (folder) => folder.toLocaleLowerCase("ca") === destKey,
       );
       if (!isExistingFolder) {
-        const ok = window.confirm(
-          `Aquesta carpeta no existeix a la llista.\n\nVoleu crear-la i moure el mitjà a: "${destFolder}"?`,
-        );
-        if (!ok) return;
+        setPendingNewFolder(destFolder);
+        return;
       }
     }
 
-    const sel = selected;
-    const body = patchBody();
-    setError(null);
-
-    try {
-      await forceCloseMediaPreview(sel);
-      await approveMutation.mutateAsync({
-        sel,
-        body,
-        destFolder: useGuess ? undefined : destFolder,
-        useGuess,
-      });
-    } catch (err) {
-      if (!(err instanceof ApiError)) {
-        setError("Error en aprovar");
-      }
-    }
+    await runApprove(useGuess, destFolder);
   }
 
   async function handleDiscard() {
     if (!selected) return;
-    const sel = selected;
-    const label = displayName(sel.item);
-    const ok = window.confirm(
-      `Segur que voleu descartar "${label}"? S'eliminarà del pendent de revisió.`,
-    );
-    if (!ok) return;
+    setPendingDiscard(true);
+  }
 
+  async function confirmDiscard() {
+    if (!selected) return;
+    const sel = selected;
+    const edits: EditSnapshot = {
+      name: editName,
+      folder: editFolder,
+      suggestedFolder,
+      date: editDate,
+      summary: editSummary,
+      location: editLocation,
+    };
+
+    setPendingDiscard(false);
     setError(null);
     try {
       await forceCloseMediaPreview(sel);
       await deleteMutation.mutateAsync(sel);
     } catch (err) {
+      restoreDetail(sel, edits);
       if (!(err instanceof ApiError)) {
         setError("Error en descartar");
       }
@@ -388,82 +521,142 @@ export function MediaReviewPanel() {
     .filter(Boolean)
     .join(" ");
 
-  const emptyMessage =
-    isLoading || (isFetching && items.length === 0)
-      ? "Carregant…"
-      : items.length === 0
-        ? "No hi ha fotos ni vídeos pendents de revisió."
-        : null;
+  const isLoadingEmpty =
+    isLoading || (isFetching && items.length === 0 && !listError);
+  const isEmpty = !isLoadingEmpty && !listError && items.length === 0;
+  const isTruncated = !isEmpty && items.length < total;
+  const willUseGuess =
+    !editFolder.trim() ||
+    (suggestedFolder !== "" &&
+      foldersMatch(editFolder.trim(), suggestedFolder));
+  const guessHint = willUseGuess
+    ? suggestedFolder
+      ? `En aprovar se suggereix i mou a «${suggestedFolder}» (carpeta calculada).`
+      : "En aprovar es calcularà la carpeta de destinació automàticament."
+    : `En aprovar es mourà explícitament a «${editFolder.trim()}».`;
 
   return (
     <>
-      {error && <div className="alert alert-error">{error}</div>}
+      {(error || listError) && (
+        <div className="alert alert-error">{error ?? listError}</div>
+      )}
 
       <div className={splitClassName}>
         {!detailVisible && (
-          <div className="card card-panel">
+          <div ref={listCardRef} className="card card-panel">
             <h3 className="card-title">
-              Pendents de revisió ({total})
+              Pendents de revisió
             </h3>
 
-            <div className="toolbar-row">
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => refetch()}
+            {isLoadingEmpty ? (
+              <PanelSkeletonList rows={pageSize} />
+            ) : listError ? (
+              <PanelEmptyActions
+                title="No s'han pogut carregar els mitjans."
+                role="alert"
               >
-                Actualitzar
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => refetch()}
+                >
+                  Tornar-ho a provar
+                </button>
+              </PanelEmptyActions>
+            ) : isEmpty ? (
+              <PanelEmptyActions title="No hi ha fotos ni vídeos pendents de revisió.">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => navigate("/documents")}
+                >
+                  Continuar a classificats
+                </button>
+              </PanelEmptyActions>
+            ) : (
+              <>
+                {isTruncated && (
+                  <p className="scan-hint" role="status">
+                    Mostrant els primers {items.length} de {total} pendents.
+                  </p>
+                )}
 
-            <div className="table-responsive">
-              {emptyMessage && (
-                <p className="empty-state" role="status">
-                  {emptyMessage}
-                </p>
-              )}
-              {!emptyMessage && (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Tipus</th>
-                      <th>Original</th>
-                      <th>Proposat</th>
-                      <th>Data</th>
-                      <th>Conf.</th>
-                      <th>Escena / lloc</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr
-                        key={`${item.kind}-${item.id}`}
-                        className={
-                          selected?.kind === item.kind &&
-                          selectedItem?.id === item.id
-                            ? "selected"
-                            : undefined
-                        }
-                        onClick={() => selectItem(item)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <td>{kindLabel(item.kind)}</td>
-                        <td>{item.original_name ?? "—"}</td>
-                        <td>{item.proposed_name ?? "—"}</td>
-                        <td>{item.date ?? "—"}</td>
-                        <td>{item.overall_conf ?? "—"}</td>
-                        <td>
-                          {shortText(item.summary, 40)}
-                          {item.location_guess
-                            ? ` · ${shortText(item.location_guess, 30)}`
-                            : ""}
-                        </td>
+                <div
+                  ref={tableAreaRef}
+                  className="table-responsive table-responsive--no-scroll table-list-body"
+                >
+                  <table
+                    className="data-table data-table--list"
+                    style={{ "--page-size": pageSize } as CSSProperties}
+                  >
+                    <thead>
+                      <tr>
+                        <th>Tipus</th>
+                        <th>Original</th>
+                        <th>Proposat</th>
+                        <th>Data</th>
+                        <th>Conf.</th>
+                        <th>Escena / lloc</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                    </thead>
+                    <tbody>
+                      {pageItems.map((item) => (
+                        <tr
+                          key={`${item.kind}-${item.id}`}
+                          className={
+                            selected?.kind === item.kind &&
+                            selectedItem?.id === item.id
+                              ? "selected"
+                              : undefined
+                          }
+                          tabIndex={0}
+                          onClick={() => selectItem(item)}
+                          onKeyDown={(e) =>
+                            onRowKeyActivate(e, () => selectItem(item))
+                          }
+                        >
+                          <td>{kindLabel(item.kind)}</td>
+                          <td>{item.original_name ?? "—"}</td>
+                          <td>{item.proposed_name ?? "—"}</td>
+                          <td>{item.date ?? "—"}</td>
+                          <td>{item.overall_conf ?? "—"}</td>
+                          <td>
+                            {shortText(item.summary, 40)}
+                            {item.location_guess
+                              ? ` · ${shortText(item.location_guess, 30)}`
+                              : ""}
+                          </td>
+                        </tr>
+                      ))}
+                      {emptyRows > 0 &&
+                        Array.from({ length: emptyRows }).map((_, idx) => (
+                          <tr
+                            key={`empty-${idx}`}
+                            className="data-table-row--empty"
+                            aria-hidden="true"
+                          >
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {!isLoading && !isFetching && (
+                  <TablePagination
+                    page={page}
+                    pageSize={pageSize}
+                    total={items.length}
+                    onPageChange={setPage}
+                  />
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -472,6 +665,7 @@ export function MediaReviewPanel() {
             type="button"
             className="split-detail-toggle"
             onClick={() => {
+              selectedKeyRef.current = null;
               setDetailOpen(false);
               setSelected(null);
             }}
@@ -525,6 +719,10 @@ export function MediaReviewPanel() {
                 maxSuggestions={0}
               />
 
+              <p className="scan-hint" role="note">
+                {guessHint}
+              </p>
+
               <div className="field">
                 <label htmlFor="media-date">Data</label>
                 <input
@@ -562,14 +760,14 @@ export function MediaReviewPanel() {
 
               {selectedItem.status === "error" && (
                 <div className="alert alert-error">
-                  <p style={{ margin: 0 }}>
+                  <p className="m-0">
                     {selectedItem.error?.trim() ||
                       "Aquest element ha fallat a l'anàlisi."}
                   </p>
-                  <p style={{ margin: "0.5rem 0 0" }}>
+                  <p className="mt-2 m-0">
                     Torneu a executar l&apos;anàlisi per aquest id.
                   </p>
-                  <div className="btn-row" style={{ marginTop: "0.75rem" }}>
+                  <div className="btn-row btn-row--followup">
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
@@ -635,6 +833,69 @@ export function MediaReviewPanel() {
           </>
         )}
       </div>
+
+      <AppDialog
+        open={pendingNewFolder != null}
+        title="Crear carpeta nova?"
+        onClose={() => setPendingNewFolder(null)}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setPendingNewFolder(null)}
+            >
+              Cancel·lar
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                if (pendingNewFolder) {
+                  void runApprove(false, pendingNewFolder);
+                }
+              }}
+            >
+              Crear i moure
+            </button>
+          </>
+        }
+      >
+        <p>
+          Aquesta carpeta no existeix a la llista. Voleu crear-la i moure el
+          mitjà a «{pendingNewFolder}»?
+        </p>
+      </AppDialog>
+
+      <AppDialog
+        open={pendingDiscard}
+        title="Descartar mitjà?"
+        onClose={() => setPendingDiscard(false)}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setPendingDiscard(false)}
+            >
+              Cancel·lar
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => void confirmDiscard()}
+            >
+              Descartar
+            </button>
+          </>
+        }
+      >
+        <p>
+          Segur que voleu descartar «
+          {selected ? displayName(selected.item) : ""}»? S&apos;eliminarà del
+          pendent de revisió.
+        </p>
+      </AppDialog>
     </>
   );
 }

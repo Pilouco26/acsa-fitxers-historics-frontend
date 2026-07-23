@@ -10,6 +10,7 @@ import {
   listLogSources,
 } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
+import { PanelEmptyActions, PanelLoading } from "@/components/PanelStatus";
 
 const LEVEL_OPTIONS = [
   { value: "", label: "Tots els nivells" },
@@ -300,10 +301,13 @@ export function AdminLogsPage() {
           }}
         >
           {!source && (
-            <p className="empty-state">Seleccioneu una font de logs.</p>
+            <PanelEmptyActions title="Seleccioneu una font de logs." />
+          )}
+          {source && logsQuery.isLoading && !lines.length && (
+            <PanelLoading label="Carregant logs…" />
           )}
           {source && !lines.length && !logsQuery.isLoading && !errorMessage && (
-            <p className="empty-state">No hi ha línies per a aquest filtre.</p>
+            <PanelEmptyActions title="No hi ha línies per a aquest filtre." />
           )}
           {lines.map((line, idx) => (
             <div

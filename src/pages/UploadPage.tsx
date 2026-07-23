@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   ApiError,
@@ -8,8 +8,10 @@ import {
   uploadMediaBatch,
 } from "@/api/client";
 import { MediaPreview } from "@/components/MediaPreview";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/contexts/AuthContext";
+import { useClassificadorJob } from "@/contexts/ClassificadorJobContext";
 import type { MediaUploadOut, UploadOut } from "@/api/types";
 
 type ContentKind = "documents" | "media";
@@ -130,6 +132,7 @@ function clearFileInputs(
 
 export function UploadPage() {
   const { apiMode, isAdmin } = useAuth();
+  const { uploadListClearToken } = useClassificadorJob();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [contentKind, setContentKind] = useState<ContentKind>("documents");
@@ -142,6 +145,14 @@ export function UploadPage() {
   const clearInputs = useCallback(() => {
     clearFileInputs(fileInputRef.current, folderInputRef.current);
   }, []);
+
+  useEffect(() => {
+    if (uploadListClearToken === 0) return;
+    setUploadedDocs([]);
+    setUploadedMedia([]);
+    setError(null);
+    clearInputs();
+  }, [uploadListClearToken, clearInputs]);
 
   const needsMode = isAdmin && !apiMode;
 
@@ -295,7 +306,7 @@ export function UploadPage() {
         </div>
       )}
 
-      <div className="field" style={{ marginBottom: "1rem" }}>
+      <div className="field upload-kind-field">
         <label>Tipus de contingut</label>
         <div className="segmented-control" role="group" aria-label="Tipus de contingut">
           <button
@@ -376,7 +387,7 @@ export function UploadPage() {
               </strong>{" "}
               o una <strong>carpeta</strong> aquí
             </p>
-            <p style={{ marginTop: "0.5rem", fontSize: "0.8125rem" }}>
+            <p className="drop-zone-hint">
               {contentKind === "documents"
                 ? "Màxim 50 MB per fitxer · Fitxers individuals o carpeta sencera"
                 : "Es permeten diversos fitxers o una carpeta sencera"}
@@ -428,8 +439,19 @@ export function UploadPage() {
           />
 
           {isPending && (
-            <div className="alert alert-info" style={{ marginTop: "1rem" }}>
-              {collectingDrop ? "Llegint carpeta…" : "Pujant fitxers…"}
+            <div
+              className="drop-zone-pending"
+              role="status"
+              aria-label={
+                collectingDrop ? "Llegint carpeta…" : "Pujant fitxers…"
+              }
+            >
+              <LoadingSpinner
+                label={
+                  collectingDrop ? "Llegint carpeta…" : "Pujant fitxers…"
+                }
+                statusRole={false}
+              />
             </div>
           )}
         </div>
@@ -450,7 +472,7 @@ export function UploadPage() {
                 {uploadedDocs.map((f) => (
                   <tr key={f.relative_path}>
                     <td>{f.filename}</td>
-                    <td style={{ color: "var(--color-text-secondary)" }}>
+                    <td className="text-secondary">
                       {f.relative_path}
                     </td>
                   </tr>
@@ -462,7 +484,7 @@ export function UploadPage() {
       )}
 
       {contentKind === "media" && uploadedMedia.length > 0 && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card upload-result-card">
           <h3 className="card-title">
             Fitxers pujats ({uploadedMedia.length})
           </h3>

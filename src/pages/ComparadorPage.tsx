@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { compareFile, ApiError } from "@/api/client";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PageHeader } from "@/components/PageHeader";
+import { PanelEmptyActions } from "@/components/PanelStatus";
 import { PdfPreview } from "@/components/PdfPreview";
 import { FilePdfPreview } from "@/components/FilePdfPreview";
 import type { CompareResponse } from "@/api/types";
@@ -26,7 +28,7 @@ function CompareResult({ result }: { result: CompareResponse }) {
 
   return (
     <div className="card">
-      <h3 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>Veredicte</h3>
+      <h3 className="card-subtitle--section">Veredicte</h3>
 
       <div className="compare-stats">
         <span>
@@ -49,8 +51,8 @@ function CompareResult({ result }: { result: CompareResponse }) {
       </div>
 
       {result.best_match && (
-        <div style={{ marginTop: "1rem" }}>
-          <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.875rem" }}>
+        <div className="mt-4">
+          <h4 className="card-subtitle">
             Millor coincidència
           </h4>
           <table className="data-table">
@@ -73,8 +75,8 @@ function CompareResult({ result }: { result: CompareResponse }) {
       )}
 
       {result.alternatives.length > 0 && (
-        <div style={{ marginTop: "1rem" }}>
-          <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.875rem" }}>
+        <div className="mt-4">
+          <h4 className="card-subtitle">
             Alternatives ({result.alternatives.length})
           </h4>
           <div className="table-responsive">
@@ -185,7 +187,7 @@ export function ComparadorPage() {
           <p>
             <strong>Feu clic</strong> o arrossegueu un PDF aquí
           </p>
-          <p style={{ marginTop: "0.5rem", fontSize: "0.8125rem" }}>
+          <p className="drop-zone-hint">
             La comparació comença automàticament
           </p>
         </div>
@@ -198,8 +200,19 @@ export function ComparadorPage() {
         />
 
         {compareMutation.isPending && (
-          <div className="alert alert-info" style={{ marginTop: "1rem" }}>
-            Comparant{fileName ? ` «${fileName}»` : ""}…
+          <div
+            className="drop-zone-pending"
+            role="status"
+            aria-label={
+              fileName ? `Comparant «${fileName}»…` : "Comparant…"
+            }
+          >
+            <LoadingSpinner
+              label={
+                fileName ? `Comparant «${fileName}»…` : "Comparant…"
+              }
+              statusRole={false}
+            />
           </div>
         )}
       </div>
@@ -207,32 +220,25 @@ export function ComparadorPage() {
       {result && (
         <>
           {result.verdict.toLowerCase() === "duplicate" ? (
-            <div className="card" style={{ marginTop: "1rem" }}>
+            <div className="card card--followup">
               <h3 className="card-title">Duplicat</h3>
-              <p style={{ margin: "0 0 1rem" }}>
+              <p className="card-intro">
                 El fitxer pujat coincideix amb un document existent. A sota teniu la vista prèvia
                 del fitxer pujat i la millor coincidència.
               </p>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "1rem",
-                  alignItems: "start",
-                }}
-              >
-                <div className="card" style={{ margin: 0 }}>
-                  <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.875rem" }}>Fitxer pujat</h4>
+              <div className="compare-preview-grid">
+                <div className="card card--nested">
+                  <h4 className="card-subtitle">Fitxer pujat</h4>
                   {file ? (
                     <FilePdfPreview file={file} title={file.name} />
                   ) : (
-                    <p className="empty-state">No hi ha fitxer per previsualitzar.</p>
+                    <PanelEmptyActions title="No hi ha fitxer per previsualitzar." />
                   )}
                 </div>
 
-                <div className="card" style={{ margin: 0 }}>
-                  <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.875rem" }}>
+                <div className="card card--nested">
+                  <h4 className="card-subtitle">
                     Millor coincidència
                   </h4>
                   {result.best_match?.document_id != null ? (
@@ -241,14 +247,14 @@ export function ComparadorPage() {
                       title={result.best_match.relative_path ?? "Document"}
                     />
                   ) : (
-                    <p className="empty-state">No hi ha document associat per previsualitzar.</p>
+                    <PanelEmptyActions title="No hi ha document associat per previsualitzar." />
                   )}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="alert alert-success" style={{ marginTop: "1rem" }}>
-              Aquest fitxer <strong>no està duplicat</strong>.
+            <div className="alert alert-success alert--followup">
+              Aquest fitxer <strong>no està duplicat</strong>
             </div>
           )}
 

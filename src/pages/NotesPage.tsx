@@ -35,7 +35,7 @@ import {
 import type { NoteOut, NoteUpdate } from "@/api/types";
 
 import { PageHeader } from "@/components/PageHeader";
-
+import { PanelLoading } from "@/components/PanelStatus";
 import { PostItNote } from "@/components/PostItNote";
 
 
@@ -695,9 +695,7 @@ export function NotesPage() {
 
 
   if (loading) {
-
-    return <p className="empty-state">Carregant tauler de notes…</p>;
-
+    return <PanelLoading label="Carregant tauler de notes…" />;
   }
 
 

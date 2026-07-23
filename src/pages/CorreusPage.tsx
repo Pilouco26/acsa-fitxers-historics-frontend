@@ -10,10 +10,12 @@ import {
 } from "@/api/client";
 import { JobProgressPanel } from "@/components/JobProgressPanel";
 import { PageHeader } from "@/components/PageHeader";
+import { PanelEmptyActions, PanelLoading } from "@/components/PanelStatus";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import type { EmailAssignResponse, EmailOut, JobOut } from "@/api/types";
+import { onRowKeyActivate } from "@/utils/rowActivation";
 
 export function CorreusPage() {
   const queryClient = useQueryClient();
@@ -137,7 +139,7 @@ export function CorreusPage() {
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="card">
-        <p style={{ margin: "0 0 1rem", color: "var(--color-text-secondary)" }}>
+        <p className="card-intro">
           Analitzeu els correus nous i assigneu-los a l'arxiu quan estiguin aprovats.
         </p>
 
@@ -168,7 +170,7 @@ export function CorreusPage() {
           </label>
         </div>
 
-        <div className="btn-row" style={{ marginTop: 0 }}>
+        <div className="btn-row btn-row--flush">
           <button
             type="button"
             className="btn btn-primary"
@@ -199,7 +201,7 @@ export function CorreusPage() {
         />
 
         {job?.status === "completed" && (
-          <div className="alert alert-success" style={{ marginTop: "1rem" }}>
+          <div className="alert alert-success alert--followup">
             Anàlisi de correus completada. Reviseu-los a continuació.
           </div>
         )}
@@ -207,12 +209,12 @@ export function CorreusPage() {
 
       {assignResult && (
         <div className="card">
-          <h3 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>
+          <h3 className="card-subtitle--section">
             Resultat de l'assignació
           </h3>
-          <div style={{ fontSize: "0.875rem" }}>
+          <div className="kv-inline">
             {Object.entries(assignResult.summary).map(([k, v]) => (
-              <span key={k} style={{ marginRight: "1.25rem" }}>
+              <span key={k}>
                 <strong>{k}:</strong> {v}
               </span>
             ))}
@@ -241,9 +243,9 @@ export function CorreusPage() {
             </div>
 
             {isLoading ? (
-              <p className="empty-state">Carregant…</p>
+              <PanelLoading />
             ) : items.length === 0 ? (
-              <p className="empty-state">No hi ha correus pendents de revisió.</p>
+              <PanelEmptyActions title="No hi ha correus pendents de revisió." />
             ) : (
               <div className="table-responsive">
                 <table className="data-table">
@@ -260,8 +262,11 @@ export function CorreusPage() {
                       <tr
                         key={email.id}
                         className={selected?.id === email.id ? "selected" : ""}
+                        tabIndex={0}
                         onClick={() => selectEmail(email)}
-                        style={{ cursor: "pointer" }}
+                        onKeyDown={(e) =>
+                          onRowKeyActivate(e, () => selectEmail(email))
+                        }
                       >
                         <td>{email.proposed_name ?? email.original_name ?? "—"}</td>
                         <td>{email.subject ?? "—"}</td>

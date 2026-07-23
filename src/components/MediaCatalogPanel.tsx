@@ -19,6 +19,7 @@ import {
 import { FilterAutocompleteInput } from "@/components/FilterAutocompleteInput";
 import { MediaPreview } from "@/components/MediaPreview";
 import { HubBackButton } from "@/components/HubBackButton";
+import { PanelEmptyActions, PanelLoading } from "@/components/PanelStatus";
 import { FOLDER_ROOT_MEDIA } from "@/constants/folders";
 import { DOCUMENT_STATUS_OK } from "@/constants/globals";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -543,14 +544,14 @@ export function MediaCatalogPanel({
               </button>
             </div>
 
-            {isLoading && <p className="empty-state">Carregant…</p>}
+            {isLoading && <PanelLoading />}
 
             {!isLoading && items.length === 0 && (
-              <p className="empty-state">
-                {emptyLabel}
-                {folderFilter ? ` a «${folderFilter}»` : ""}
-                {debouncedSearch ? " amb aquesta cerca" : ""}.
-              </p>
+              <PanelEmptyActions
+                title={`${emptyLabel}${
+                  folderFilter ? ` a «${folderFilter}»` : ""
+                }${debouncedSearch ? " amb aquesta cerca" : ""}.`}
+              />
             )}
 
             {!isLoading && items.length > 0 && (
@@ -715,10 +716,7 @@ export function MediaCatalogPanel({
                 />
               </div>
 
-              <div
-                className="toolbar-row"
-                style={{ justifyContent: "flex-end", marginTop: "0.75rem" }}
-              >
+              <div className="toolbar-row btn-row--end mt-3">
                 <button
                   type="button"
                   className="btn btn-danger btn-sm"
@@ -731,13 +729,9 @@ export function MediaCatalogPanel({
             </div>
 
             <div className="card card-panel split-detail-preview">
-              <div
-                className="toolbar-row toolbar-row--detail-actions"
-                style={{ marginBottom: 0 }}
-              >
+              <div className="toolbar-row toolbar-row--detail-actions toolbar-row--flush">
                 <h3
-                  className="card-title"
-                  style={{ marginBottom: 0, flex: "1 1 auto" }}
+                  className="card-title card-title--grow"
                 >
                   Vista prèvia
                 </h3>

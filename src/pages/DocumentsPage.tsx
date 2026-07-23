@@ -18,6 +18,7 @@ import { FilterAutocompleteInput } from "@/components/FilterAutocompleteInput";
 import { HubBackButton } from "@/components/HubBackButton";
 import { PageHeader } from "@/components/PageHeader";
 import { BackendDocumentTranslatePanel } from "@/components/BackendDocumentTranslatePanel";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PdfPreview } from "@/components/PdfPreview";
 import { TablePagination } from "@/components/TablePagination";
 import toast from "react-hot-toast";
@@ -45,6 +46,7 @@ import { matchesDocumentFilters } from "@/utils/matchDocumentFilters";
 import { sortDocuments } from "@/utils/sortDocuments";
 import { buildArchiveFolderSuggestions } from "@/utils/folderSuggestions";
 import { useAuth } from "@/contexts/AuthContext";
+import { onRowKeyActivate } from "@/utils/rowActivation";
 
 const COMPACT_VIEWPORT = "(max-width: 600px)";
 
@@ -143,6 +145,8 @@ export function DocumentsPage() {
   const [selected, setSelected] = useState<DocumentOut | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewRotation, setPreviewRotation] = useState(0);
+  const [previewToolbarActionsHost, setPreviewToolbarActionsHost] =
+    useState<HTMLDivElement | null>(null);
   const [translateOpen, setTranslateOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editFolder, setEditFolder] = useState("");
@@ -465,14 +469,13 @@ export function DocumentsPage() {
 
   const emptyRows = isCompact ? 0 : Math.max(0, pageSize - items.length);
 
-  const tableOverlayMessage =
-    isLoading || (isFetching && items.length === 0)
-      ? "Carregant…"
-      : items.length === 0
-        ? hasActiveFilters
-          ? "No s'han trobat documents amb aquests filtres."
-          : "No hi ha documents aprovats."
-        : null;
+  const isTableLoading = isLoading || (isFetching && items.length === 0);
+  const tableEmptyMessage =
+    !isTableLoading && items.length === 0
+      ? hasActiveFilters
+        ? "No s'han trobat documents amb aquests filtres."
+        : "No hi ha documents aprovats."
+      : null;
 
   function selectDoc(doc: DocumentOut) {
     const folderQs = filterFolder.trim()
@@ -726,10 +729,7 @@ export function DocumentsPage() {
           <p className="split-detail-summary">{selected.summary || "—"}</p>
         </div>
 
-        <div
-          className="toolbar-row"
-          style={{ justifyContent: "flex-end", marginTop: "0.75rem" }}
-        >
+        <div className="toolbar-row btn-row--end mt-3">
           <DeleteDocumentButton
             document={selected}
             isPending={deleteMutation.isPending}
@@ -746,14 +746,8 @@ export function DocumentsPage() {
     detailVisible && selected ? (
       <div className="card card-panel split-detail-preview">
         {!translateFocusOpen && (
-          <div
-            className="toolbar-row toolbar-row--detail-actions"
-            style={{ marginBottom: 0 }}
-          >
-            <h3
-              className="card-title"
-              style={{ marginBottom: 0, flex: "1 1 auto" }}
-            >
+          <div className="toolbar-row toolbar-row--detail-actions toolbar-row--flush">
+            <h3 className="card-title card-title--grow">
               Vista prèvia
             </h3>
             {!looksLikePassthroughSource(selected.language) && (
@@ -769,6 +763,10 @@ export function DocumentsPage() {
                 Traduir
               </button>
             )}
+            <div
+              ref={setPreviewToolbarActionsHost}
+              className="pdf-preview-toolbar-actions-host"
+            />
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -840,6 +838,7 @@ export function DocumentsPage() {
             documentId={selected.id}
             title={editName || selected.original_name || "PDF"}
             rotation={previewRotation}
+            toolbarActionsHost={previewToolbarActionsHost}
           />
         )}
       </div>
@@ -874,7 +873,7 @@ export function DocumentsPage() {
 
             <details className="table-filters-advanced">
               <summary>Filtres</summary>
-              <div className="field-grid" style={{ marginTop: "0.75rem" }}>
+              <div className="field-grid field-grid--followup">
                 <FilterAutocompleteInput
                   id="filter-folder"
                   label="Carpeta"
@@ -927,7 +926,7 @@ export function DocumentsPage() {
                 />
               </div>
               {hasFilterUiActive && (
-                <div className="toolbar-row" style={{ marginTop: "0.75rem" }}>
+                <div className="toolbar-row mt-3">
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
@@ -943,9 +942,14 @@ export function DocumentsPage() {
               ref={tableAreaRef}
               className="table-responsive table-responsive--no-scroll table-list-body"
             >
-              {tableOverlayMessage && (
+              {isTableLoading && (
+                <div className="table-list-overlay" role="status" aria-label="Carregant…">
+                  <LoadingSpinner label="Carregant…" statusRole={false} />
+                </div>
+              )}
+              {tableEmptyMessage && (
                 <p className="table-list-overlay" role="status">
-                  {tableOverlayMessage}
+                  {tableEmptyMessage}
                 </p>
               )}
               <table
@@ -982,8 +986,11 @@ export function DocumentsPage() {
                       <tr
                         key={doc.id}
                         className={selected?.id === doc.id ? "selected" : ""}
+                        tabIndex={0}
                         onClick={() => selectDoc(doc)}
-                        style={{ cursor: "pointer" }}
+                        onKeyDown={(e) =>
+                          onRowKeyActivate(e, () => selectDoc(doc))
+                        }
                       >
                         <td>
                           <span className="table-list-primary">{name}</span>

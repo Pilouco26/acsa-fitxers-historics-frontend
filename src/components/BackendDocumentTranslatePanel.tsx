@@ -166,9 +166,7 @@ function TranslationPageBlock({
       ) : text.trim() ? (
         <PagePlainContent text={text} />
       ) : (
-        <p className="empty-state" style={{ padding: "1.5rem" }}>
-          (Pàgina sense text)
-        </p>
+        <p className="empty-state empty-state--compact">(Pàgina sense text)</p>
       )}
     </article>
   );
@@ -905,9 +903,9 @@ export function BackendDocumentTranslatePanel({
                   className="pdf-ocr-paper pdf-ocr-paper--original"
                   style={getPagePaperStyle(null)}
                 >
-                  <p className="empty-state" style={{ padding: "1.5rem" }}>
-                    Carregant document…
-                  </p>
+                  <div className="translate-page-loading">
+                    <LoadingSpinner label="Carregant document…" />
+                  </div>
                 </div>
               ) : (
                 pageIndexes.map((page) => {
@@ -927,12 +925,9 @@ export function BackendDocumentTranslatePanel({
                           draggable={false}
                         />
                       ) : (
-                        <p
-                          className="empty-state"
-                          style={{ padding: "1.5rem" }}
-                        >
-                          Carregant pàgina {page}…
-                        </p>
+                        <div className="translate-page-loading">
+                          <LoadingSpinner label={`Carregant pàgina ${page}…`} />
+                        </div>
                       )}
                     </div>
                   );
@@ -1030,15 +1025,15 @@ export function BackendDocumentTranslatePanel({
                             style={{ opacity: 0.35 }}
                           />
                         ) : (
-                          <p
-                            className="empty-state"
-                            style={{
-                              padding: "1.5rem",
-                              position: "relative",
-                            }}
-                          >
-                            {page === 1 ? "Preparant layout…" : `Pàgina ${page}`}
-                          </p>
+                          <div className="translate-page-loading">
+                            <LoadingSpinner
+                              label={
+                                page === 1
+                                  ? "Preparant layout…"
+                                  : `Pàgina ${page}`
+                              }
+                            />
+                          </div>
                         )}
                       </div>
                     );
@@ -1050,10 +1045,7 @@ export function BackendDocumentTranslatePanel({
                       lang={metaSource ?? undefined}
                       dir={dir}
                     >
-                      <p
-                        className="empty-state"
-                        style={{ padding: "1.5rem", position: "relative" }}
-                      >
+                      <p className="empty-state empty-state--compact">
                         Aquest document no té text traduït.
                       </p>
                     </div>

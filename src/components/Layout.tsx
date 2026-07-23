@@ -95,9 +95,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const moreNavSections = isAdmin
     ? [
-        { title: "Flux principal", items: fluxNav },
+        { title: "Flux", items: fluxNav },
         { title: "Eines", items: toolsNav },
-        { title: "Administració", items: adminToolsNav },
+        { title: "Admin", items: adminToolsNav },
       ]
     : [
         {
@@ -121,9 +121,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   });
 
   const adminVisualControls = isAdmin ? (
-    <div className="more-nav-visual-controls">
-      <div className="more-nav-visual-group">
-        <span className="more-nav-visual-label">Mode de dades</span>
+    <div className="more-nav-prefs-controls">
+      <div className="more-nav-prefs-group">
+        <span className="more-nav-prefs-label">Mode de dades</span>
         <div className="sidebar-mode-switch" role="group" aria-label="Mode de dades">
           {ADMIN_VIEW_MODE_OPTIONS.map((option) => (
             <button
@@ -141,8 +141,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </div>
       </div>
-      <div className="more-nav-visual-group">
-        <span className="more-nav-visual-label">Tema</span>
+      <div className="more-nav-prefs-group">
+        <span className="more-nav-prefs-label">Tema</span>
         <div className="sidebar-theme-switch" role="group" aria-label="Mode de tema">
           <button
             type="button"
@@ -197,6 +197,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             sections={moreNavSections}
             onLogout={handleLogout}
             visualControls={adminVisualControls}
+            badgeCount={isAdmin ? revisioCountQuery.data : undefined}
           />
         </div>
       </aside>

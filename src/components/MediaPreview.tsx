@@ -6,6 +6,7 @@ import {
   throwIfNotOk,
   videoFileUrl,
 } from "@/api/client";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import type { MediaKind } from "@/api/types";
 
 const activeReleases = new Map<string, () => void>();
@@ -421,10 +422,10 @@ export function MediaPreview({
   if (error) {
     return (
       <div className={shellClass}>
-        <div className="alert alert-error" style={{ margin: "0.75rem" }}>
-          <p style={{ margin: 0 }}>{error}</p>
+        <div className="alert alert-error alert--inset">
+          <p className="m-0">{error}</p>
           {objectUrl && kind === "video" && !thumb && (
-            <p style={{ margin: "0.75rem 0 0" }}>
+            <p className="mt-3 m-0">
               <a
                 className="btn btn-secondary btn-sm"
                 href={objectUrl}
@@ -441,7 +442,13 @@ export function MediaPreview({
 
   return (
     <div className={shellClass} aria-busy={loading} aria-label={title}>
-      {loading && <p className="empty-state">Carregant…</p>}
+      {loading && (
+        <LoadingSpinner
+          className="media-preview-loading"
+          label={thumb ? undefined : "Carregant…"}
+          statusRole={!thumb}
+        />
+      )}
       {!loading && objectUrl && kind === "picture" && (
         <img
           ref={imgRef}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ApiError,
   deleteDocument,
@@ -11,6 +12,7 @@ import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { BackendDocumentTranslatePanel } from "@/components/BackendDocumentTranslatePanel";
 import { MediaReviewPanel } from "@/components/MediaReviewPanel";
 import { PageHeader } from "@/components/PageHeader";
+import { PanelEmptyActions, PanelSkeletonList } from "@/components/PanelStatus";
 import {
   PdfPreview,
   releaseDocumentPreview,
@@ -32,8 +34,14 @@ import {
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePrefetchDocumentListPages } from "@/hooks/usePrefetchDocumentListPages";
 import type { DocumentOut } from "@/api/types";
+import { onRowKeyActivate } from "@/utils/rowActivation";
 
 type ContentKind = "documents" | "media";
+
+function parseContentKind(value: string | null): ContentKind | null {
+  if (value === "documents" || value === "media") return value;
+  return null;
+}
 
 function isRepeatedDocument(doc: DocumentOut): boolean {
   return (
@@ -53,8 +61,15 @@ function duplicateLabel(path: string | null | undefined): string {
 
 export function RevisioPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const pageActive = location.pathname === "/revisio";
+  const wasPageActiveRef = useRef(pageActive);
 
-  const [contentKind, setContentKind] = useState<ContentKind>("documents");
+  const [contentKind, setContentKind] = useState<ContentKind>(() => {
+    return parseContentKind(searchParams.get("kind")) ?? "documents";
+  });
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(0);
@@ -65,6 +80,12 @@ export function RevisioPage() {
   const [editName, setEditName] = useState("");
   const [editSummary, setEditSummary] = useState("");
   const [previewRotation, setPreviewRotation] = useState(0);
+  const [previewToolbarActionsHost, setPreviewToolbarActionsHost] =
+    useState<HTMLDivElement | null>(null);
+  const [compareToolbarActionsHost, setCompareToolbarActionsHost] =
+    useState<HTMLDivElement | null>(null);
+  const [originalToolbarActionsHost, setOriginalToolbarActionsHost] =
+    useState<HTMLDivElement | null>(null);
   const [originalRotation, setOriginalRotation] = useState(0);
   const [compareOriginal, setCompareOriginal] = useState(false);
   const [translateOpen, setTranslateOpen] = useState(false);
@@ -72,6 +93,17 @@ export function RevisioPage() {
   const [error, setError] = useState<string | null>(null);
   const listCardRef = useRef<HTMLDivElement>(null);
   const tableAreaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pageActive) return;
+    const fromUrl = parseContentKind(searchParams.get("kind"));
+    if (fromUrl) setContentKind(fromUrl);
+  }, [pageActive, searchParams]);
+
+  const selectContentKind = (kind: ContentKind) => {
+    setContentKind(kind);
+    navigate({ pathname: "/revisio", search: `?kind=${kind}` }, { replace: true });
+  };
 
   useEffect(() => {
     setPage(0);
@@ -94,6 +126,13 @@ export function RevisioPage() {
     placeholderData: keepPreviousData,
     enabled: contentKind === "documents",
   });
+
+  useEffect(() => {
+    const becameActive = pageActive && !wasPageActiveRef.current;
+    wasPageActiveRef.current = pageActive;
+    if (!becameActive || contentKind !== "documents") return;
+    void refetch();
+  }, [pageActive, contentKind, refetch]);
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -271,12 +310,12 @@ export function RevisioPage() {
 
   const emptyRows = Math.max(0, pageSize - items.length);
 
-  const tableOverlayMessage =
-    isLoading || (isFetching && items.length === 0)
-      ? "Carregant…"
-      : items.length === 0
-        ? "No hi ha documents pendents de revisió."
-        : null;
+  const isLoadingEmpty =
+    isLoading || (isFetching && items.length === 0);
+  const isEmpty = !isLoadingEmpty && items.length === 0;
+  const hasActiveSearch = Boolean(search.trim() || debouncedSearch.trim());
+  const isSearchNoMatch = isEmpty && hasActiveSearch;
+  const isInboxEmpty = isEmpty && !hasActiveSearch;
 
   return (
     <div className="page-fill">
@@ -297,7 +336,7 @@ export function RevisioPage() {
         }
       />
 
-      <div className="field" style={{ marginBottom: "1rem" }}>
+      <div className="field content-kind-field">
         <label>Tipus de contingut</label>
         <div
           className="segmented-control"
@@ -307,14 +346,14 @@ export function RevisioPage() {
           <button
             type="button"
             className={contentKind === "documents" ? "active" : undefined}
-            onClick={() => setContentKind("documents")}
+            onClick={() => selectContentKind("documents")}
           >
             Documents
           </button>
           <button
             type="button"
             className={contentKind === "media" ? "active" : undefined}
-            onClick={() => setContentKind("media")}
+            onClick={() => selectContentKind("media")}
           >
             Fotos / vídeos
           </button>
@@ -331,78 +370,102 @@ export function RevisioPage() {
         {!detailVisible && (
           <div ref={listCardRef} className="card card-panel">
             <h3 className="card-title">Documents pendents de revisió</h3>
-            <div className="toolbar-row">
-              <input
-                type="search"
-                placeholder="Cerca per nom o empresa…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => refetch()}>
-                Actualitzar
-              </button>
-            </div>
 
-            <div
-              ref={tableAreaRef}
-              className="table-responsive table-responsive--no-scroll table-list-body"
-            >
-              {tableOverlayMessage && (
-                <p className="table-list-overlay" role="status">
-                  {tableOverlayMessage}
-                </p>
-              )}
-              <table
-                className="data-table data-table--list"
-                style={{ "--page-size": pageSize } as CSSProperties}
-              >
-                <thead>
-                  <tr>
-                    <th>Nom</th>
-                    <th>Empresa</th>
-                    <th>Tipus</th>
-                    <th>Data</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      className={[
-                        selected?.id === doc.id && "selected",
-                        isRepeatedDocument(doc) && "data-table-row--repeated",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => selectDoc(doc)}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
-                      <td>{doc.company ?? "—"}</td>
-                      <td>{doc.doc_type_ca ?? doc.doc_type ?? "—"}</td>
-                      <td>{doc.final_date ?? "—"}</td>
-                    </tr>
-                  ))}
-                  {emptyRows > 0 &&
-                    Array.from({ length: emptyRows }).map((_, idx) => (
-                      <tr key={`empty-${idx}`} className="data-table-row--empty" aria-hidden="true">
-                        <td>&nbsp;</td>
-                        <td>&nbsp;</td>
-                        <td>&nbsp;</td>
-                        <td>&nbsp;</td>
+            {!isInboxEmpty && (
+              <div className="toolbar-row">
+                <input
+                  type="search"
+                  placeholder="Cerca per nom o empresa…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            )}
+
+            {isLoadingEmpty ? (
+              <PanelSkeletonList rows={pageSize} />
+            ) : isSearchNoMatch ? (
+              <PanelEmptyActions title="Cap document no coincideix amb la cerca.">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setSearch("")}
+                >
+                  Netejar cerca
+                </button>
+              </PanelEmptyActions>
+            ) : isInboxEmpty ? (
+              <PanelEmptyActions title="No hi ha documents pendents de revisió.">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => navigate("/documents")}
+                >
+                  Continuar a classificats
+                </button>
+              </PanelEmptyActions>
+            ) : (
+              <>
+                <div
+                  ref={tableAreaRef}
+                  className="table-responsive table-responsive--no-scroll table-list-body"
+                >
+                  <table
+                    className="data-table data-table--list"
+                    style={{ "--page-size": pageSize } as CSSProperties}
+                  >
+                    <thead>
+                      <tr>
+                        <th>Nom</th>
+                        <th>Empresa</th>
+                        <th>Tipus</th>
+                        <th>Data</th>
                       </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {items.map((doc) => (
+                        <tr
+                          key={doc.id}
+                          className={[
+                            selected?.id === doc.id && "selected",
+                            isRepeatedDocument(doc) && "data-table-row--repeated",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          tabIndex={0}
+                          onClick={() => selectDoc(doc)}
+                          onKeyDown={(e) =>
+                            onRowKeyActivate(e, () => selectDoc(doc))
+                          }
+                        >
+                          <td>{doc.proposed_name ?? doc.original_name ?? "—"}</td>
+                          <td>{doc.company ?? "—"}</td>
+                          <td>{doc.doc_type_ca ?? doc.doc_type ?? "—"}</td>
+                          <td>{doc.final_date ?? "—"}</td>
+                        </tr>
+                      ))}
+                      {emptyRows > 0 &&
+                        Array.from({ length: emptyRows }).map((_, idx) => (
+                          <tr key={`empty-${idx}`} className="data-table-row--empty" aria-hidden="true">
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                            <td>&nbsp;</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
 
-            {!isLoading && !isFetching && (
-              <TablePagination
-                page={page}
-                pageSize={pageSize}
-                total={total}
-                onPageChange={setPage}
-              />
+                {!isLoading && !isFetching && (
+                  <TablePagination
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                  />
+                )}
+              </>
             )}
           </div>
         )}
@@ -459,12 +522,12 @@ export function RevisioPage() {
 
               {selectedIsRepeated && (
                 <div className="alert alert-info revisio-duplicate-banner">
-                  <p style={{ margin: 0 }}>
+                  <p className="m-0">
                     Possible duplicat
                     {duplicatePath ? `: ${duplicateLabel(duplicatePath)}` : ""}.
                   </p>
                   {duplicatePath ? (
-                    <div className="toolbar-row" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+                    <div className="toolbar-row toolbar-row--followup">
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -476,7 +539,7 @@ export function RevisioPage() {
                       </button>
                     </div>
                   ) : (
-                    <p style={{ margin: "0.5rem 0 0" }}>
+                    <p className="mt-2 m-0">
                       No s'ha trobat el camí del document original.
                     </p>
                   )}
@@ -536,8 +599,8 @@ export function RevisioPage() {
                 duplicatePath ? (
                 <div className="split-detail-compare">
                   <div className="split-detail-compare-pane">
-                    <div className="toolbar-row" style={{ marginBottom: 0 }}>
-                      <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
+                    <div className="toolbar-row toolbar-row--flush">
+                      <h3 className="card-title card-title--grow">
                         Aquest document
                       </h3>
                       {!looksLikePassthroughSource(selected.language) && (
@@ -553,6 +616,10 @@ export function RevisioPage() {
                         Traduir
                       </button>
                       )}
+                      <div
+                        ref={setCompareToolbarActionsHost}
+                        className="pdf-preview-toolbar-actions-host"
+                      />
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -567,13 +634,18 @@ export function RevisioPage() {
                       documentId={selected.id}
                       title={selected.proposed_name ?? selected.original_name ?? "PDF"}
                       rotation={previewRotation}
+                      toolbarActionsHost={compareToolbarActionsHost}
                     />
                   </div>
                   <div className="split-detail-compare-pane">
-                    <div className="toolbar-row" style={{ marginBottom: 0 }}>
-                      <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
+                    <div className="toolbar-row toolbar-row--flush">
+                      <h3 className="card-title card-title--grow">
                         Original
                       </h3>
+                      <div
+                        ref={setOriginalToolbarActionsHost}
+                        className="pdf-preview-toolbar-actions-host"
+                      />
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -588,13 +660,14 @@ export function RevisioPage() {
                       filePath={duplicatePath}
                       title={duplicateLabel(duplicatePath)}
                       rotation={originalRotation}
+                      toolbarActionsHost={originalToolbarActionsHost}
                     />
                   </div>
                 </div>
               ) : (
                 <>
-                  <div className="toolbar-row" style={{ marginBottom: 0 }}>
-                    <h3 className="card-title" style={{ marginBottom: 0, flex: "1 1 auto" }}>
+                  <div className="toolbar-row toolbar-row--flush">
+                    <h3 className="card-title card-title--grow">
                       Vista prèvia
                     </h3>
                     {!looksLikePassthroughSource(selected.language) && (
@@ -610,6 +683,10 @@ export function RevisioPage() {
                       Traduir
                     </button>
                     )}
+                    <div
+                      ref={setPreviewToolbarActionsHost}
+                      className="pdf-preview-toolbar-actions-host"
+                    />
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
@@ -626,6 +703,7 @@ export function RevisioPage() {
                     documentId={selected.id}
                     title={selected.proposed_name ?? selected.original_name ?? "PDF"}
                     rotation={previewRotation}
+                    toolbarActionsHost={previewToolbarActionsHost}
                   />
                 </>
               )}

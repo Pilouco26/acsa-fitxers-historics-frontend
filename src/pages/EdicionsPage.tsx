@@ -13,10 +13,10 @@ function SummaryCard({
 }) {
   return (
     <div className="card">
-      <h3 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>{title}</h3>
-      <div style={{ fontSize: "0.875rem" }}>
+      <h3 className="card-subtitle--section">{title}</h3>
+      <div className="kv-inline">
         {Object.entries(summary).map(([k, v]) => (
-          <span key={k} style={{ marginRight: "1.25rem" }}>
+          <span key={k}>
             <strong>{k}:</strong> {v}
           </span>
         ))}
@@ -72,7 +72,7 @@ export function EdicionsPage() {
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="card">
-        <p style={{ margin: "0 0 1rem", color: "var(--color-text-secondary)" }}>
+        <p className="card-intro">
           Aplica els noms proposats aprovats als fitxers de l'arxiu, o reverteix
           l'última operació d'aplicació.
         </p>
@@ -100,7 +100,7 @@ export function EdicionsPage() {
           </label>
         </div>
 
-        <div className="btn-row" style={{ marginTop: 0 }}>
+        <div className="btn-row btn-row--flush">
           <button
             type="button"
             className="btn btn-primary"

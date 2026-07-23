@@ -43,6 +43,8 @@ interface ClassificadorJobContextValue {
   contentKind: ClassificadorContentKind | null;
   /** Kinds finished in the current run (for success copy). */
   completedKinds: ClassificadorContentKind[];
+  /** Increments each time inbox processing starts — UploadPage clears its lists. */
+  uploadListClearToken: number;
   startAnalyze: () => void;
   cancel: () => void;
 }
@@ -65,15 +67,21 @@ function jobHadWork(job: JobOut | null): boolean {
   if (!job) return false;
 
   const progress = job.progress;
+  let progressSaidWork: boolean | null = null;
   if (progress) {
-    if (typeof progress.total === "number") return progress.total > 0;
-    if (typeof progress.processed === "number") return progress.processed > 0;
-    const counts = progress.status_counts;
-    if (counts && Object.keys(counts).length > 0) {
-      return Object.values(counts).some((value) => value > 0);
+    if (typeof progress.total === "number") {
+      progressSaidWork = progress.total > 0;
+    } else if (typeof progress.processed === "number") {
+      progressSaidWork = progress.processed > 0;
+    } else {
+      const counts = progress.status_counts;
+      if (counts && Object.keys(counts).length > 0) {
+        progressSaidWork = Object.values(counts).some((value) => value > 0);
+      }
     }
   }
 
+  const hasResult = job.result != null;
   const files = mediaAnalyzeFiles(job.result);
   if (files.length > 0) return true;
 
@@ -84,27 +92,66 @@ function jobHadWork(job: JobOut | null): boolean {
     if (typeof s.processed === "number") return s.processed > 0;
   }
 
+  // Explicit empty media result + no positive progress → no work.
+  if (
+    hasResult &&
+    Array.isArray(job.result?.files) &&
+    files.length === 0 &&
+    progressSaidWork !== true
+  ) {
+    return false;
+  }
+
+  if (progressSaidWork != null) return progressSaidWork;
+
+  // Completed job with no progress/result signals → skip assign/route.
+  if (job.status === "completed" && !hasResult) {
+    return false;
+  }
+
   // No empty signal — assume work so assign/route still runs for real jobs.
   return true;
+}
+
+const REVISIO_MEDIA_PAGE = 200;
+
+async function listAllRevisioMediaKind(
+  kind: MediaKind,
+): Promise<{ id: number; kind: MediaKind }[]> {
+  const out: { id: number; kind: MediaKind }[] = [];
+  let offset = 0;
+  for (;;) {
+    const page =
+      kind === "picture"
+        ? await listPictures({
+            status: DOCUMENT_STATUS_REVISIO,
+            limit: REVISIO_MEDIA_PAGE,
+            offset,
+          })
+        : await listVideos({
+            status: DOCUMENT_STATUS_REVISIO,
+            limit: REVISIO_MEDIA_PAGE,
+            offset,
+          });
+    const items = page.items ?? [];
+    for (const item of items) {
+      out.push({ id: item.id, kind });
+    }
+    offset += items.length;
+    if (items.length < REVISIO_MEDIA_PAGE) break;
+    if (typeof page.total === "number" && offset >= page.total) break;
+  }
+  return out;
 }
 
 async function listRevisioMediaForRouting(): Promise<
   { id: number; kind: MediaKind }[]
 > {
   const [pictures, videos] = await Promise.all([
-    listPictures({ status: DOCUMENT_STATUS_REVISIO, limit: 200 }),
-    listVideos({ status: DOCUMENT_STATUS_REVISIO, limit: 200 }),
+    listAllRevisioMediaKind("picture"),
+    listAllRevisioMediaKind("video"),
   ]);
-  return [
-    ...(pictures.items ?? []).map((item) => ({
-      id: item.id,
-      kind: "picture" as const,
-    })),
-    ...(videos.items ?? []).map((item) => ({
-      id: item.id,
-      kind: "video" as const,
-    })),
-  ];
+  return [...pictures, ...videos];
 }
 
 async function hasPendingMedia(): Promise<boolean> {
@@ -135,6 +182,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
   const [completedKinds, setCompletedKinds] = useState<
     ClassificadorContentKind[]
   >([]);
+  const [uploadListClearToken, setUploadListClearToken] = useState(0);
   const assignedForJobRef = useRef<string | null>(null);
   const routedForJobRef = useRef<string | null>(null);
   const advancedForJobRef = useRef<string | null>(null);
@@ -469,6 +517,9 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
 
     hasPendingMedia()
       .then((mediaPending) => {
+        // Clear upload confirmation lists only once the probe succeeded and
+        // we are about to start document (and possibly media) analysis.
+        setUploadListClearToken((n) => n + 1);
         // PDFs live on disk until analyze, so documents are always scanned.
         // Media rows exist after upload — only queue them when pending ones exist.
         queueRef.current = mediaPending ? ["media"] : [];
@@ -521,6 +572,7 @@ export function ClassificadorJobProvider({ children }: { children: ReactNode }) 
         isActive,
         contentKind,
         completedKinds,
+        uploadListClearToken,
         startAnalyze,
         cancel,
       }}
