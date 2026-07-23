@@ -24,7 +24,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import type { JobOut, MediaAnalyzeResultFile, MediaKind } from "@/api/types";
 import {
-  DOCUMENT_STATUS_PENDING,
+  DOCUMENT_STATUS_ANALYZE_PENDING,
   DOCUMENT_STATUS_REVISIO,
 } from "@/constants/globals";
 
@@ -108,11 +108,14 @@ async function listRevisioMediaForRouting(): Promise<
 }
 
 async function hasPendingMedia(): Promise<boolean> {
-  const [pictures, videos] = await Promise.all([
-    listPictures({ status: DOCUMENT_STATUS_PENDING, limit: 1 }),
-    listVideos({ status: DOCUMENT_STATUS_PENDING, limit: 1 }),
-  ]);
-  return (pictures.total ?? 0) + (videos.total ?? 0) > 0;
+  // Exact status filter — probe the same set backend list_pending uses.
+  const results = await Promise.all(
+    DOCUMENT_STATUS_ANALYZE_PENDING.flatMap((status) => [
+      listPictures({ status, limit: 1 }),
+      listVideos({ status, limit: 1 }),
+    ]),
+  );
+  return results.some((page) => (page.total ?? 0) > 0);
 }
 
 const ClassificadorJobContext =

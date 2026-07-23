@@ -11,6 +11,7 @@ const documentStatusCountLabels: Record<string, string> = {
   revisio: "En revisió",
   repeated: "Repetits",
   error: "Errors",
+  pendent: "Pendents",
   pending: "Pendents",
 };
 

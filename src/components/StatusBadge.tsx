@@ -16,6 +16,7 @@ export function StatusBadge({ status }: { status: string | null }) {
     revisio: "Revisió",
     repeated: "Repetit",
     error: "Error",
+    pendent: "Pendent",
     pending: "Pendent",
   };
 

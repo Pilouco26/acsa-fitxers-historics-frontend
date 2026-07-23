@@ -13,4 +13,14 @@ export const LIST_PANEL_ROW_HEIGHT_PX = 42;
 
 export const DOCUMENT_STATUS_OK = "ok";
 export const DOCUMENT_STATUS_REVISIO = "revisio";
-export const DOCUMENT_STATUS_PENDING = "pending";
+/** Stored on upload / awaiting analyze (Catalan; API exact-match filter). */
+export const DOCUMENT_STATUS_PENDING = "pendent";
+/**
+ * Statuses backend list_pending treats as ready to analyze.
+ * Probe each — GET ?status= is an exact filter, not a set.
+ */
+export const DOCUMENT_STATUS_ANALYZE_PENDING = [
+  DOCUMENT_STATUS_PENDING,
+  "pending",
+  "error",
+] as const;

@@ -120,30 +120,56 @@ export function Layout({ children }: { children: React.ReactNode }) {
     staleTime: 15_000,
   });
 
+  const adminVisualControls = isAdmin ? (
+    <div className="more-nav-visual-controls">
+      <div className="more-nav-visual-group">
+        <span className="more-nav-visual-label">Mode de dades</span>
+        <div className="sidebar-mode-switch" role="group" aria-label="Mode de dades">
+          {ADMIN_VIEW_MODE_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={viewMode === option ? "active" : undefined}
+              onClick={() => setViewMode(option as AdminViewMode)}
+            >
+              {option === "ALL"
+                ? "Tots"
+                : option === "EMPRESA"
+                  ? "Empresa"
+                  : "Personal"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="more-nav-visual-group">
+        <span className="more-nav-visual-label">Tema</span>
+        <div className="sidebar-theme-switch" role="group" aria-label="Mode de tema">
+          <button
+            type="button"
+            className={theme === "light" ? "active" : undefined}
+            onClick={() => setTheme("light")}
+          >
+            Clar
+          </button>
+          <button
+            type="button"
+            className={theme === "dark" ? "active" : undefined}
+            onClick={() => setTheme("dark")}
+          >
+            Fosc
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
           <img src={logoAcsa} alt="ACSA" className="sidebar-brand-logo" />
           <p>Fitxers històrics</p>
-          {isAdmin ? (
-            <div className="sidebar-mode-switch" role="group" aria-label="Mode de dades">
-              {ADMIN_VIEW_MODE_OPTIONS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={viewMode === option ? "active" : undefined}
-                  onClick={() => setViewMode(option as AdminViewMode)}
-                >
-                  {option === "ALL"
-                    ? "Tots"
-                    : option === "EMPRESA"
-                      ? "Empresa"
-                      : "Personal"}
-                </button>
-              ))}
-            </div>
-          ) : userTypeLabel ? (
+          {!isAdmin && userTypeLabel ? (
             <p className="sidebar-mode" aria-label={`Mode ${userTypeLabel}`}>
               {userTypeLabel}
               {roleLabel && roleLabel !== userTypeLabel ? ` · ${roleLabel}` : ""}
@@ -167,29 +193,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
           )}
         </nav>
         <div className="sidebar-footer">
-          {isAdmin ? (
-            <div
-              className="sidebar-theme-switch"
-              role="group"
-              aria-label="Mode de tema"
-            >
-              <button
-                type="button"
-                className={theme === "light" ? "active" : undefined}
-                onClick={() => setTheme("light")}
-              >
-                Clar
-              </button>
-              <button
-                type="button"
-                className={theme === "dark" ? "active" : undefined}
-                onClick={() => setTheme("dark")}
-              >
-                Fosc
-              </button>
-            </div>
-          ) : null}
-          <MoreNavMenu sections={moreNavSections} onLogout={handleLogout} />
+          <MoreNavMenu
+            sections={moreNavSections}
+            onLogout={handleLogout}
+            visualControls={adminVisualControls}
+          />
         </div>
       </aside>
       <div className="main-area">

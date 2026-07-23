@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 type NavItem = { to: string; label: string };
@@ -7,9 +7,15 @@ type NavSection = { title: string; items: NavItem[] };
 type MoreNavMenuProps = {
   sections: NavSection[];
   onLogout?: () => void;
+  /** Admin-only visual controls (data mode + theme), shown under "Visual". */
+  visualControls?: ReactNode;
 };
 
-export function MoreNavMenu({ sections, onLogout }: MoreNavMenuProps) {
+export function MoreNavMenu({
+  sections,
+  onLogout,
+  visualControls,
+}: MoreNavMenuProps) {
   const { pathname } = useLocation();
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -82,6 +88,12 @@ export function MoreNavMenu({ sections, onLogout }: MoreNavMenuProps) {
               ))}
             </div>
           ))}
+          {visualControls ? (
+            <div className="nav-section more-nav-visual">
+              <div className="nav-section-title">Visual</div>
+              {visualControls}
+            </div>
+          ) : null}
           {onLogout ? (
             <div className="more-nav-logout">
               <button
